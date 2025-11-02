@@ -1,6 +1,6 @@
-
 import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content } from "@google/genai";
 
+// Fix: Use process.env.API_KEY to align with guidelines and fix TypeScript error.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const model = 'gemini-2.5-flash';
