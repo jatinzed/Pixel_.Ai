@@ -1,3 +1,4 @@
+
 Pixel AI is an intelligent, real-time chat and voice assistant built with React and TypeScript.
 It lets users chat with an AI, collaborate in shared chat rooms, and even talk through live voice sessions — all inside a clean, responsive interface.
 
@@ -94,7 +95,7 @@ npm install
 
 Create a file named .env.local in the root directory and add:
 
-GEMINI_API_KEY=your_gemini_api_key_here
+VITE_API_KEY=your_gemini_api_key_here
 
 
 3. Run the app
