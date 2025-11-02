@@ -1,6 +1,6 @@
 {
-  "name": "Chat AI",
-  "description": "An AI chatbot application with a sleek and modern user interface, inspired by advanced chat platforms. It allows users to have conversations with a Gemini-powered AI.",
+  "name": "Pixel AI",
+  "description": "Pixel AI is an intelligent, real-time chat and voice assistant. It lets users chat with an AI, collaborate in shared chat rooms, and even talk through live voice sessions — all inside a clean, responsive interface.",
   "requestFramePermissions": [
     "microphone"
   ]

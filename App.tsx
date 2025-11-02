@@ -10,9 +10,9 @@ import { Conversation, Message, Room, RoomMessage } from './types';
 import { startChat, sendMessageStream, askQuestion } from './services/geminiService';
 import type { Content } from '@google/genai';
 
-const USER_ID_KEY = 'chat-ai-user-id';
-const CONVERSATIONS_KEY_PREFIX = 'chat-ai-conversations-';
-const ROOMS_KEY_PREFIX = 'chat-ai-rooms-';
+const USER_ID_KEY = 'pixel-ai-user-id';
+const CONVERSATIONS_KEY_PREFIX = 'pixel-ai-conversations-';
+const ROOMS_KEY_PREFIX = 'pixel-ai-rooms-';
 
 const getUserId = (): string => {
     let userId = localStorage.getItem(USER_ID_KEY);
