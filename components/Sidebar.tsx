@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { PlusIcon, ImageIcon, MessageIcon, ChevronDoubleLeftIcon, HashtagIcon, PlusCircleIcon, ArrowRightIcon } from './Icons';
+import { PlusIcon, ImageIcon, MessageIcon, ChevronDoubleLeftIcon, HashtagIcon, PlusCircleIcon, ArrowRightIcon, PaperAirplaneIcon } from './Icons';
 import { Conversation, Room } from '../types';
 
 interface SidebarProps {
@@ -14,6 +14,7 @@ interface SidebarProps {
     onSelectRoom: (id: string) => void;
     onOpenNotepad: () => void;
     onOpenRoomModal: () => void;
+    onOpenTelegramModal: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -26,7 +27,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     onSelectConversation,
     onSelectRoom,
     onOpenNotepad,
-    onOpenRoomModal
+    onOpenRoomModal,
+    onOpenTelegramModal,
 }) => {
   return (
     <aside className="h-full bg-white flex flex-col border-r border-gray-100 overflow-hidden">
@@ -53,6 +55,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                   onClick={onOpenNotepad}
                   className="p-3 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
                     <ImageIcon className="w-6 h-6" />
+                </button>
+                <button 
+                  onClick={onOpenTelegramModal}
+                  className="p-3 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
+                    <PaperAirplaneIcon className="w-6 h-6" />
                 </button>
             </div>
             

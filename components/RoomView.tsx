@@ -9,11 +9,12 @@ interface RoomViewProps {
   currentUserId: string;
   onSendMessage: (text: string) => void;
   onAskAi: (text: string) => void;
+  onToggleReaction: (messageId: string, emoji: string) => void;
   isLoading: boolean;
   isSidebarOpen: boolean;
 }
 
-const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage, onAskAi, isLoading, isSidebarOpen }) => {
+const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage, onAskAi, onToggleReaction, isLoading, isSidebarOpen }) => {
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -50,7 +51,12 @@ const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage,
             <div className="flex-1 overflow-y-auto p-8 md:p-12">
                 <div className="space-y-8 w-full max-w-3xl mx-auto">
                     {room.messages.map((msg) => (
-                        <RoomMessageComponent key={msg.id} message={msg} currentUserId={currentUserId} />
+                        <RoomMessageComponent 
+                            key={msg.id} 
+                            message={msg} 
+                            currentUserId={currentUserId} 
+                            onToggleReaction={onToggleReaction}
+                        />
                     ))}
                     {isLoading && room.messages[room.messages.length - 1]?.senderId === currentUserId && (
                         <div className="flex items-start space-x-4">

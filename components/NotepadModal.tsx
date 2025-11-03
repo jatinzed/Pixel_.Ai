@@ -1,12 +1,15 @@
+
 import React from 'react';
 import { CloseIcon } from './Icons';
 
 interface NotepadModalProps {
   isOpen: boolean;
   onClose: () => void;
+  content: string;
+  onContentChange: (newContent: string) => void;
 }
 
-const NotepadModal: React.FC<NotepadModalProps> = ({ isOpen, onClose }) => {
+const NotepadModal: React.FC<NotepadModalProps> = ({ isOpen, onClose, content, onContentChange }) => {
   if (!isOpen) return null;
 
   return (
@@ -32,6 +35,8 @@ const NotepadModal: React.FC<NotepadModalProps> = ({ isOpen, onClose }) => {
         </div>
         <div>
           <textarea
+            value={content}
+            onChange={(e) => onContentChange(e.target.value)}
             className="w-full h-64 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none text-gray-800 bg-white"
             placeholder="Start writing your notes here..."
             aria-label="Notepad content"

@@ -1,19 +1,26 @@
 
-
-
-
 import React, { useState, useRef, useEffect } from 'react';
-import type { Conversation } from '../types';
+import type { Conversation, TelegramCredentials, TelegramRecipient, GroundingChunk } from '../types';
 import ChatMessage from './ChatMessage';
-import { SendIcon, PixelBotIcon, BotAvatar, MicrophoneIcon, ChevronDownIcon, PauseIcon, AttachmentIcon, CloseIcon } from './Icons';
+import { SendIcon, PixelBotIcon, BotAvatar, MicrophoneIcon, ChevronDownIcon, PauseIcon, AttachmentIcon } from './Icons';
 import { connectToLiveSession, createBlob, decode, decodeAudioData } from '../services/geminiService';
-import type { LiveSession, LiveServerMessage } from '@google/genai';
+import type { LiveSession, LiveServerMessage, FunctionDeclaration } from '@google/genai';
+import { Type } from '@google/genai';
 
-const LiveVoiceView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+interface LiveVoiceViewProps {
+  onClose: () => void;
+  onSendTelegram: (message: string, chatId: string) => Promise<{success: boolean, message: string}>;
+  telegramRecipients: TelegramRecipient[];
+}
+
+const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, telegramRecipients }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const animationFrameRef = useRef<number>();
     const timeRef = useRef<number>(0);
     const [isInteracting, setIsInteracting] = useState(false);
+    const [sources, setSources] = useState<GroundingChunk[]>([]);
+    const [error, setError] = useState<string | null>(null);
+    const isNewTurn = useRef(true);
 
     const sessionPromise = useRef<Promise<LiveSession> | null>(null);
     const inputAudioContext = useRef<AudioContext | null>(null);
@@ -24,7 +31,7 @@ const LiveVoiceView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const sourceNode = useRef<MediaStreamAudioSourceNode | null>(null);
     
     const nextStartTime = useRef<number>(0);
-    const sources = useRef(new Set<AudioBufferSourceNode>());
+    const audioSources = useRef(new Set<AudioBufferSourceNode>());
 
     const cleanup = () => {
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -128,9 +135,12 @@ const LiveVoiceView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
 
     const startInteraction = async () => {
+        setError(null); // Reset error on new attempt
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             microphoneStream.current = stream;
+            setSources([]);
+            isNewTurn.current = true;
 
             inputAudioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
             outputAudioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -142,6 +152,33 @@ const LiveVoiceView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             sourceNode.current.connect(analyserNode.current);
 
             animationFrameRef.current = requestAnimationFrame(() => drawWave(analyserNode.current!));
+            
+            let liveSystemInstruction: string | undefined = undefined;
+            if (telegramRecipients.length > 0) {
+                const recipientNames = telegramRecipients.map(r => `"${r.name}"`).join(', ');
+                liveSystemInstruction = `You can send Telegram messages on the user's behalf. To do so, use the 'send_telegram_message' function. You must specify the recipient's name exactly as it appears in this list of available recipients: ${recipientNames}.`;
+            }
+
+            const sendTelegramFunctionDeclaration: FunctionDeclaration = {
+                name: 'send_telegram_message',
+                description: 'Sends a message to a specific person via their configured Telegram bot.',
+                parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                        recipient_name: {
+                            type: Type.STRING,
+                            description: "The name of the person to send the message to. This must be one of the available recipient names provided in the system instructions.",
+                        },
+                        message: {
+                            type: Type.STRING,
+                            description: 'The content of the message to send.',
+                        },
+                    },
+                    required: ['recipient_name', 'message'],
+                },
+            };
+
+            const tools = [{ functionDeclarations: [sendTelegramFunctionDeclaration] }, {googleSearch: {}}];
 
             sessionPromise.current = connectToLiveSession({
                 onopen: () => {
@@ -161,6 +198,44 @@ const LiveVoiceView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     processor.connect(iac.destination);
                 },
                 onmessage: async (message: LiveServerMessage) => {
+                    const hasContent = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data || message.serverContent?.groundingMetadata;
+
+                    if (hasContent && isNewTurn.current) {
+                        setSources([]); // Clear sources from previous turn
+                        isNewTurn.current = false;
+                    }
+
+                    if (message.serverContent?.groundingMetadata?.groundingChunks) {
+                        setSources(message.serverContent.groundingMetadata.groundingChunks);
+                    }
+
+                    if (message.toolCall) {
+                        for (const fc of message.toolCall.functionCalls) {
+                            if (fc.name === 'send_telegram_message') {
+                                const recipientName = fc.args.recipient_name;
+                                const text = fc.args.message;
+                                const recipient = telegramRecipients.find(r => r.name.toLowerCase() === recipientName?.toLowerCase());
+                                
+                                let result;
+                                if (recipient) {
+                                    result = await onSendTelegram(text, recipient.chatId);
+                                } else {
+                                    result = { success: false, message: `Could not find a recipient named "${recipientName}". Please try again with one of the configured recipient names.` };
+                                }
+
+                                sessionPromise.current?.then((session) => {
+                                    session.sendToolResponse({
+                                        functionResponses: {
+                                            id : fc.id,
+                                            name: fc.name,
+                                            response: { result: result.message },
+                                        }
+                                    });
+                                });
+                            }
+                        }
+                    }
+
                     const base64EncodedAudioString = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
                     if (base64EncodedAudioString && outputAudioContext.current && outputAudioContext.current.state === 'running') {
                         nextStartTime.current = Math.max(nextStartTime.current, outputAudioContext.current!.currentTime);
@@ -168,31 +243,42 @@ const LiveVoiceView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                         const source = outputAudioContext.current!.createBufferSource();
                         source.buffer = audioBuffer;
                         source.connect(outputAudioContext.current!.destination);
-                        source.addEventListener('ended', () => { sources.current.delete(source); });
+                        source.addEventListener('ended', () => { audioSources.current.delete(source); });
                         source.start(nextStartTime.current);
                         nextStartTime.current = nextStartTime.current + audioBuffer.duration;
-                        sources.current.add(source);
+                        audioSources.current.add(source);
+                    }
+
+                    if (message.serverContent?.turnComplete) {
+                        isNewTurn.current = true;
                     }
 
                     if (message.serverContent?.interrupted) {
-                        for (const source of sources.current.values()) source.stop();
-                        sources.current.clear();
+                        for (const source of audioSources.current.values()) source.stop();
+                        audioSources.current.clear();
                         nextStartTime.current = 0;
+                        setSources([]);
                     }
                 },
                 onerror: (e) => { console.error('Live session error:', e); stopAndCleanup(); },
                 onclose: () => { stopAndCleanup(); },
-            });
+            }, tools, liveSystemInstruction);
             setIsInteracting(true);
         } catch (err) {
-            console.error('Failed to get microphone access:', err);
+            console.error('Failed to start voice interaction:', err);
             setIsInteracting(false);
+            if (err instanceof Error) {
+                setError(err.message);
+            } else {
+                setError("An unknown error occurred while starting the voice session.");
+            }
         }
     };
     
     const stopAndCleanup = () => {
         cleanup();
         setIsInteracting(false);
+        setSources([]);
     };
 
     const handleToggleMic = () => {
@@ -219,6 +305,41 @@ const LiveVoiceView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <main className="flex-1 flex flex-col items-center justify-center relative">
                 <canvas ref={canvasRef} width="1000" height="200" className="absolute top-1/2 left-0 w-full h-48 -translate-y-1/2" />
                 
+                 {sources.length > 0 && (
+                    <div className="absolute top-16 w-full max-w-3xl mx-auto px-4">
+                        <div className="bg-white/80 backdrop-blur-sm rounded-lg p-3 shadow-md">
+                            <h4 className="text-xs font-semibold text-gray-600 mb-2">Sources:</h4>
+                            <ul className="space-y-1 max-h-24 overflow-y-auto">
+                                {sources.map((chunk, index) => (
+                                    chunk.web && (
+                                        <li key={index} className="text-xs">
+                                            <a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
+                                                <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">{index + 1}</span>
+                                                <span className="truncate">{chunk.web.title || chunk.web.uri}</span>
+                                            </a>
+                                        </li>
+                                    )
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="absolute inset-0 bg-white/90 flex items-center justify-center p-8 z-20">
+                        <div className="text-center">
+                            <h3 className="text-lg font-semibold text-red-600">Failed to Start Voice Session</h3>
+                            <p className="mt-2 text-sm text-gray-700">{error}</p>
+                            <button
+                                onClick={onClose}
+                                className="mt-6 bg-gray-200 text-gray-800 font-semibold py-2 px-6 rounded-full hover:bg-gray-300 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 <div className="absolute bottom-16 flex flex-col items-center gap-8">
                      <button
                         onClick={handleToggleMic}
@@ -249,11 +370,15 @@ interface ChatViewProps {
   onSendMessage: (prompt: string) => void;
   isLoading: boolean;
   isSidebarOpen: boolean;
+  telegramCredentials: TelegramCredentials | null;
+  onSendTelegram: (message: string, chatId: string) => Promise<{success: boolean, message: string}>;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ conversation, onSendMessage, isLoading, isSidebarOpen }) => {
+const ChatView: React.FC<ChatViewProps> = ({ conversation, onSendMessage, isLoading, isSidebarOpen, telegramCredentials, onSendTelegram }) => {
     const [input, setInput] = useState('');
     const [isLiveViewOpen, setIsLiveViewOpen] = useState(false);
+    const [telegramStatus, setTelegramStatus] = useState('');
+
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
     const { messages } = conversation;
 
@@ -261,10 +386,35 @@ const ChatView: React.FC<ChatViewProps> = ({ conversation, onSendMessage, isLoad
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    const handleSend = () => {
-        if (!input.trim() || isLoading) return;
-        onSendMessage(input);
-        setInput('');
+    const handleSend = async () => {
+        const trimmedInput = input.trim();
+        if (!trimmedInput || isLoading) return;
+
+        const telegramMatch = trimmedInput.match(/^@([\w\s.-]+) (.*)/s);
+
+        if (telegramMatch) {
+            if (telegramCredentials?.recipients && telegramCredentials.recipients.length > 0) {
+                const recipientName = telegramMatch[1].trim();
+                const message = telegramMatch[2].trim();
+                const recipient = telegramCredentials.recipients.find(r => r.name.toLowerCase() === recipientName.toLowerCase());
+                
+                if (recipient) {
+                    const result = await onSendTelegram(message, recipient.chatId);
+                    setTelegramStatus(result.message);
+                    setTimeout(() => setTelegramStatus(''), 3000);
+                    setInput('');
+                } else {
+                    setTelegramStatus(`Recipient "${recipientName}" not found. Check your configuration or spelling.`);
+                    setTimeout(() => setTelegramStatus(''), 5000);
+                }
+            } else {
+                setTelegramStatus("No Telegram recipients configured. Please add recipients in the settings.");
+                setTimeout(() => setTelegramStatus(''), 5000);
+            }
+        } else {
+            onSendMessage(trimmedInput);
+            setInput('');
+        }
     };
     
     const showLoadingIndicator = isLoading && messages.length > 0 && messages[messages.length-1].role === 'model';
@@ -304,13 +454,14 @@ const ChatView: React.FC<ChatViewProps> = ({ conversation, onSendMessage, isLoad
 
             <div className="px-4 md:px-6 pb-4">
                 <div className="w-full max-w-3xl mx-auto">
+                    {telegramStatus && <p className="text-center text-sm text-gray-500 mb-2 transition-opacity">{telegramStatus}</p>}
                     <div className="bg-white rounded-full shadow-md flex items-center p-2">
                         <input
                             type="text"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                            placeholder="Ask Pixel Ai"
+                            placeholder="Ask Pixel Ai or type @recipient to message"
                             className="flex-1 bg-transparent border-none text-sm text-gray-800 placeholder-gray-500 placeholder:font-extrabold focus:outline-none focus:ring-0 px-4"
                             disabled={isLoading}
                         />
@@ -323,14 +474,14 @@ const ChatView: React.FC<ChatViewProps> = ({ conversation, onSendMessage, isLoad
                         <button
                             onClick={handleSend}
                             disabled={isLoading || !input.trim()}
-                            className="p-2.5 rounded-full bg-[#6A5BFF] text-white hover:bg-opacity-90 disabled:bg-gray-300 transition-colors"
+                            className="p-2.5 ml-2 rounded-full bg-[#6A5BFF] text-white hover:bg-opacity-90 disabled:bg-gray-300 transition-colors"
                         >
                             <SendIcon className="w-5 h-5 transform rotate-90" />
                         </button>
                     </div>
                 </div>
             </div>
-            {isLiveViewOpen && <LiveVoiceView onClose={() => setIsLiveViewOpen(false)} />}
+            {isLiveViewOpen && <LiveVoiceView onClose={() => setIsLiveViewOpen(false)} onSendTelegram={onSendTelegram} telegramRecipients={telegramCredentials?.recipients || []} />}
         </div>
     );
 };

@@ -1,10 +1,23 @@
-
 import type { Chat } from '@google/genai';
+
+export interface WebGroundingSource {
+  uri: string;
+  title: string;
+}
+
+export interface GroundingChunk {
+  web?: WebGroundingSource;
+}
+
+export interface GroundingMetadata {
+  groundingChunks: GroundingChunk[];
+}
 
 export interface Message {
   id: string;
   role: 'user' | 'model';
   content: string;
+  groundingMetadata?: GroundingMetadata;
 }
 
 export interface Conversation {
@@ -25,6 +38,7 @@ export interface RoomMessage {
   text: string;
   timestamp: string;
   reactions: Reaction;
+  groundingMetadata?: GroundingMetadata;
 }
 
 export interface RoomMember {
@@ -37,4 +51,15 @@ export interface Room {
   name: string;
   members: RoomMember[];
   messages: RoomMessage[];
+}
+
+// Types for Telegram Integration
+export interface TelegramRecipient {
+  name: string;
+  chatId: string;
+}
+
+export interface TelegramCredentials {
+  token: string;
+  recipients: TelegramRecipient[];
 }
