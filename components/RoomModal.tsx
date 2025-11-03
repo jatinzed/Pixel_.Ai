@@ -5,8 +5,8 @@ import { CloseIcon, CopyIcon, CheckCircleIcon } from './Icons';
 interface RoomModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateRoom: () => string;
-  onJoinRoom: (roomCode: string) => void;
+  onCreateRoom: () => Promise<string>;
+  onJoinRoom: (roomCode: string) => Promise<void>;
 }
 
 const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onClose, onCreateRoom, onJoinRoom }) => {
@@ -17,16 +17,16 @@ const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onClose, onCreateRoom, on
 
   if (!isOpen) return null;
 
-  const handleCreate = () => {
-    const code = onCreateRoom();
+  const handleCreate = async () => {
+    const code = await onCreateRoom();
     setNewRoomCode(code);
     setCopied(false);
   };
   
-  const handleJoin = (e: React.FormEvent) => {
+  const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (roomCode.trim()) {
-      onJoinRoom(roomCode.trim().toUpperCase());
+      await onJoinRoom(roomCode.trim().toUpperCase());
       onClose();
     }
   };

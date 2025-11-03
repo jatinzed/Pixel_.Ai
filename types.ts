@@ -41,15 +41,10 @@ export interface RoomMessage {
   groundingMetadata?: GroundingMetadata;
 }
 
-export interface RoomMember {
-  id: string;
-  status: 'online' | 'offline';
-}
-
 export interface Room {
   id: string; // The unique room code
   name: string;
-  members: RoomMember[];
+  memberIds: string[];
   messages: RoomMessage[];
 }
 

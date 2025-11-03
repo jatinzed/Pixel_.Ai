@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import type { Room, RoomMessage } from '../types';
 import RoomMessageComponent from './RoomMessage';
@@ -44,7 +43,7 @@ const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage,
                 </div>
                 <div className="flex items-center space-x-2 text-sm font-medium text-gray-600">
                     <UsersIcon className="w-5 h-5"/>
-                    <span>{room.members.length}</span>
+                    <span>{room.memberIds.length}</span>
                 </div>
             </header>
 

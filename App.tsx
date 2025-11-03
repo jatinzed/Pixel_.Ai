@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
@@ -7,12 +6,13 @@ import NotepadModal from './components/NotepadModal';
 import RoomModal from './components/RoomModal';
 import TelegramModal from './components/TelegramModal';
 import { MenuIcon } from './components/Icons';
-import { Conversation, Message, Room, RoomMessage, TelegramCredentials, TelegramRecipient } from './types';
+import { Conversation, Message, Room, TelegramCredentials, TelegramRecipient } from './types';
 import { startChat, sendMessageStream, askQuestion, sendTelegramMessage } from './services/geminiService';
+import { createRoom, joinRoom, listenToUserRooms, sendRoomMessage as sendFirebaseRoomMessage, toggleReaction as toggleFirebaseReaction } from './services/firebaseService';
+
 
 const USER_ID_KEY = 'pixel-ai-user-id';
 const CONVERSATIONS_KEY_PREFIX = 'pixel-ai-conversations-';
-const ROOMS_KEY = 'pixel-ai-rooms';
 const NOTEPAD_KEY_PREFIX = 'pixel-ai-notepad-';
 const TELEGRAM_CREDS_KEY = 'pixel-ai-telegram-creds';
 
@@ -122,39 +122,19 @@ const App: React.FC = () => {
     const key = `${NOTEPAD_KEY_PREFIX}${userId}`;
     localStorage.setItem(key, notepadContent);
   }, [notepadContent, userId]);
-
-  // Load rooms from local storage & set up real-time sync
+  
+  // Set up real-time listener for chat rooms from Firebase
   useEffect(() => {
-    const saved = localStorage.getItem(ROOMS_KEY);
-    if (saved) {
-      try {
-        const savedRooms: Room[] = JSON.parse(saved);
-        setRooms(savedRooms);
-      } catch (e) { console.error("Failed to load rooms:", e); localStorage.removeItem(ROOMS_KEY); }
-    }
+    if (!userId) return;
     
-    const handleStorageChange = (event: StorageEvent) => {
-        if (event.key === ROOMS_KEY && event.newValue) {
-            try {
-                const updatedRooms: Room[] = JSON.parse(event.newValue);
-                setRooms(updatedRooms);
-            } catch (e) {
-                console.error("Failed to update rooms from storage event:", e);
-            }
-        }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
+    const unsubscribe = listenToUserRooms(userId, (updatedRooms) => {
+        setRooms(updatedRooms);
+    });
 
     return () => {
-        window.removeEventListener('storage', handleStorageChange);
+        unsubscribe();
     };
-  }, []);
-
-  // Save rooms to local storage (and broadcast to other tabs)
-  useEffect(() => {
-    localStorage.setItem(ROOMS_KEY, JSON.stringify(rooms));
-  }, [rooms]);
+  }, [userId]);
   
     // Load Telegram credentials from local storage
   useEffect(() => {
@@ -204,68 +184,15 @@ const App: React.FC = () => {
     setActiveRoomId(id);
   };
 
-  const handleCreateRoom = (): string => {
-    const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const newRoom: Room = {
-      id: roomCode,
-      name: `Room ${roomCode}`,
-      members: [{id: userId, status: 'online'}, {id: 'PixelBot', status: 'online'}],
-      messages: [{
-        id: Date.now().toString(),
-        senderId: 'PixelBot',
-        text: `Welcome to the room! Your room code is ${roomCode}. Share it with others to invite them.`,
-        timestamp: new Date().toISOString(),
-        reactions: {}
-      }],
-    };
-    setRooms(prev => [...prev, newRoom]);
-    handleSelectRoom(newRoom.id);
+  const handleCreateRoom = async (): Promise<string> => {
+    const roomCode = await createRoom(userId);
+    handleSelectRoom(roomCode);
     return roomCode;
   };
   
-  const handleJoinRoom = (roomCode: string) => {
-    const room = rooms.find(r => r.id === roomCode);
-
-    if (room) { // Room exists, join it
-      // Defensive check for corrupted room data from localStorage
-      const safeMembers = Array.isArray(room.members) ? room.members : [];
-      const safeMessages = Array.isArray(room.messages) ? room.messages : [];
-      
-      const isMember = safeMembers.some(m => m.id === userId);
-      if (!isMember) {
-        const updatedRoom: Room = {
-          ...room,
-          members: [...safeMembers, { id: userId, status: 'online' }],
-          messages: [
-            ...safeMessages,
-            {
-              id: Date.now().toString(),
-              senderId: 'PixelBot',
-              text: `User ${userId.substring(5)} has joined the room.`,
-              timestamp: new Date().toISOString(),
-              reactions: {},
-            },
-          ],
-        };
-        setRooms(prev => prev.map(r => (r.id === roomCode ? updatedRoom : r)));
-      }
-      handleSelectRoom(roomCode);
-    } else { // Room doesn't exist, create it
-      const newRoom: Room = {
-        id: roomCode,
-        name: `Room ${roomCode}`,
-        members: [{id: userId, status: 'online'}, {id: 'PixelBot', status: 'online'}],
-        messages: [{
-          id: Date.now().toString(),
-          senderId: 'PixelBot',
-          text: 'Welcome! You have joined the room.',
-          timestamp: new Date().toISOString(),
-          reactions: {}
-        }],
-      };
-      setRooms(prev => [...prev, newRoom]);
-      handleSelectRoom(roomCode);
-    }
+  const handleJoinRoom = async (roomCode: string) => {
+    await joinRoom(roomCode, userId);
+    handleSelectRoom(roomCode);
   };
 
   const handleSendMessage = async (prompt: string) => {
@@ -320,90 +247,42 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSendRoomMessage = (text: string) => {
+  const handleSendRoomMessage = async (text: string) => {
       if (!activeRoomId) return;
-      
-      const newMessage: RoomMessage = {
-        id: Date.now().toString(),
-        senderId: userId,
-        text,
-        timestamp: new Date().toISOString(),
-        reactions: {}
-      };
-
-      setRooms(prev => prev.map(r => r.id === activeRoomId ? {...r, messages: [...r.messages, newMessage]} : r));
+      await sendFirebaseRoomMessage(activeRoomId, { senderId: userId, text });
   };
   
   const handleAskAiInRoom = async (text: string) => {
       if (!activeRoomId) return;
       setIsLoading(true);
 
-      const userMessage: RoomMessage = {
-        id: Date.now().toString(),
-        senderId: userId,
-        text: `/ask ${text}`,
-        timestamp: new Date().toISOString(),
-        reactions: {}
-      };
-
-      setRooms(prev => prev.map(r => r.id === activeRoomId ? {...r, messages: [...r.messages, userMessage]} : r));
+      await sendFirebaseRoomMessage(activeRoomId, { senderId: userId, text: `/ask ${text}` });
 
       try {
         const { text: responseText, groundingMetadata } = await askQuestion(text);
-        const aiMessage: RoomMessage = {
-          id: (Date.now() + 1).toString(),
-          senderId: 'PixelBot',
-          text: responseText,
-          timestamp: new Date().toISOString(),
-          reactions: {},
-          groundingMetadata: groundingMetadata
-        };
-        setRooms(prev => prev.map(r => r.id === activeRoomId ? {...r, messages: [...r.messages, aiMessage]} : r));
+        await sendFirebaseRoomMessage(activeRoomId, {
+            senderId: 'PixelBot',
+            text: responseText,
+            groundingMetadata: groundingMetadata
+        });
       } catch (error) {
          console.error("Error asking AI in room:", error);
          if (error instanceof Error && error.message.includes("API key")) {
             setInitializationError(error.message);
             return;
          }
-         const errorMessage: RoomMessage = {
-          id: (Date.now() + 1).toString(),
-          senderId: 'PixelBot',
-          text: "Sorry, I couldn't answer that question.",
-          timestamp: new Date().toISOString(),
-          reactions: {}
-        };
-        setRooms(prev => prev.map(r => r.id === activeRoomId ? {...r, messages: [...r.messages, errorMessage]} : r));
+         await sendFirebaseRoomMessage(activeRoomId, {
+            senderId: 'PixelBot',
+            text: "Sorry, I couldn't answer that question.",
+         });
       } finally {
         setIsLoading(false);
       }
   };
 
-  const handleToggleReaction = (messageId: string, emoji: string) => {
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
     if (!activeRoomId) return;
-
-    setRooms(prevRooms => prevRooms.map(room => {
-        if (room.id === activeRoomId) {
-            const updatedMessages = room.messages.map(message => {
-                if (message.id === messageId) {
-                    const reactions = { ...(message.reactions || {}) };
-                    const reactingUsers = reactions[emoji] || [];
-                    
-                    if (reactingUsers.includes(userId)) {
-                        reactions[emoji] = reactingUsers.filter(id => id !== userId);
-                        if (reactions[emoji].length === 0) {
-                            delete reactions[emoji];
-                        }
-                    } else {
-                        reactions[emoji] = [...reactingUsers, userId];
-                    }
-                    return { ...message, reactions };
-                }
-                return message;
-            });
-            return { ...room, messages: updatedMessages };
-        }
-        return room;
-    }));
+    await toggleFirebaseReaction(activeRoomId, messageId, emoji, userId);
   };
 
   const activeConversation = conversations.find(c => c.id === activeConversationId);
