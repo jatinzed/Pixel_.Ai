@@ -1,19 +1,73 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useLayoutEffect } from 'react';
 import type { RoomMessage } from '../types';
 import { UserAvatar, BotAvatar, FaceSmileIcon } from './Icons';
 
-// This is a simplified version for room messages.
-// For a full implementation, you would use the same robust markdown/mathjax rendering as in ChatMessage.tsx
-const MessageContent: React.FC<{ content: string }> = ({ content }) => {
-    const html = useMemo(() => {
-        if (window.marked && window.DOMPurify) {
-            return window.DOMPurify.sanitize(window.marked.parse(content, { gfm: true, breaks: true }));
-        }
-        return content.replace(/\n/g, '<br />');
-    }, [content]);
+declare global {
+  interface Window {
+    MathJax: any;
+    marked: {
+      parse: (markdown: string, options?: any) => string;
+    };
+    DOMPurify: {
+      sanitize: (html: string, config?: object) => string;
+    };
+  }
+}
 
-    return <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />;
+const MessageContent: React.FC<{ content: string }> = ({ content }) => {
+    const contentRef = useRef<HTMLDivElement>(null);
+
+    useLayoutEffect(() => {
+        const element = contentRef.current;
+        if (!element) return;
+        
+        // Manually handle DOM updates to prevent conflicts between React and MathJax
+        if (!window.marked || !window.DOMPurify) {
+            element.innerHTML = content.replace(/\n/g, '<br />');
+            return;
+        }
+
+        // 1. Isolate math expressions
+        const mathExpressions: string[] = [];
+        const placeholder = (i: number) => `<span data-math-placeholder="${i}">\u200b</span>`;
+
+        const contentWithoutMath = content.replace(
+            /(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g,
+            (match) => {
+                const i = mathExpressions.length;
+                mathExpressions.push(match);
+                return placeholder(i);
+            }
+        );
+
+        // 2. Process Markdown and sanitize
+        const rawHtml = window.marked.parse(contentWithoutMath, { gfm: true, breaks: true });
+        const sanitizedHtml = window.DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['data-math-placeholder'] });
+        
+        // 3. Re-insert math expressions as raw text
+        const finalHtmlWithMath = sanitizedHtml.replace(/<span data-math-placeholder="(\d+)">\u200b<\/span>/g, (match, indexStr) => {
+            const index = parseInt(indexStr, 10);
+            return mathExpressions[index] || '';
+        });
+        
+        // 4. Set the inner HTML and then typeset with MathJax
+        element.innerHTML = finalHtmlWithMath;
+
+        if (window.MathJax?.startup?.promise) {
+            window.MathJax.startup.promise
+                .then(() => {
+                    // Re-check ref in case component unmounted during promise resolution
+                    if (contentRef.current) { 
+                        window.MathJax.typesetPromise([contentRef.current])
+                            .catch((err: any) => console.error('MathJax Typeset Error:', err));
+                    }
+                });
+        }
+    }, [content]); // Re-run effect only when the content string changes
+
+    // Render an empty container; the effect hook will manage its content.
+    return <div ref={contentRef} className="prose" />;
 };
 
 interface RoomMessageComponentProps {

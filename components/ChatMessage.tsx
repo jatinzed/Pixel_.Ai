@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useLayoutEffect, useRef, useMemo } from 'react';
 import { Message } from '../types';
 import { UserAvatar, BotAvatar } from './Icons';
 
@@ -19,14 +19,19 @@ declare global {
 const AiMessageContent: React.FC<{ content: string }> = ({ content }) => {
     const contentRef = useRef<HTMLDivElement>(null);
 
-    const finalHtml = useMemo(() => {
+    useLayoutEffect(() => {
+        const element = contentRef.current;
+        if (!element) return;
+
+        // Manually handle DOM updates to prevent conflicts between React and MathJax
         if (!window.marked || !window.DOMPurify) {
-            return content.replace(/\n/g, '<br />');
+            element.innerHTML = content.replace(/\n/g, '<br />');
+            return;
         }
 
-        // Protect LaTeX formulas from the Markdown parser
+        // 1. Isolate math expressions
         const mathExpressions: string[] = [];
-        const placeholder = (i: number) => `<!--MATHJAX_PLACEHOLDER_${i}-->`;
+        const placeholder = (i: number) => `<span data-math-placeholder="${i}">\u200b</span>`;
 
         const contentWithoutMath = content.replace(
             /(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g,
@@ -37,31 +42,33 @@ const AiMessageContent: React.FC<{ content: string }> = ({ content }) => {
             }
         );
 
-        // Parse markdown, sanitize, and restore math
+        // 2. Process Markdown and sanitize
         const rawHtml = window.marked.parse(contentWithoutMath, { gfm: true, breaks: true });
-        const sanitizedHtml = window.DOMPurify.sanitize(rawHtml, { KEEP_COMMENTS: true });
-        const finalHtmlWithMath = sanitizedHtml.replace(/<!--MATHJAX_PLACEHOLDER_(\d+)-->/g, (match, indexStr) => {
+        const sanitizedHtml = window.DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['data-math-placeholder'] });
+        
+        // 3. Re-insert math expressions as raw text
+        const finalHtmlWithMath = sanitizedHtml.replace(/<span data-math-placeholder="(\d+)">\u200b<\/span>/g, (match, indexStr) => {
             const index = parseInt(indexStr, 10);
             return mathExpressions[index] || '';
         });
         
-        return finalHtmlWithMath;
-    }, [content]);
+        // 4. Set the inner HTML and then typeset with MathJax
+        element.innerHTML = finalHtmlWithMath;
 
-    useEffect(() => {
-        const element = contentRef.current;
-        if (element && window.MathJax?.startup?.promise) {
+        if (window.MathJax?.startup?.promise) {
             window.MathJax.startup.promise
                 .then(() => {
-                    if (contentRef.current) { // Re-check ref in case component unmounted
+                    // Re-check ref in case component unmounted during promise resolution
+                    if (contentRef.current) { 
                         window.MathJax.typesetPromise([contentRef.current])
                             .catch((err: any) => console.error('MathJax Typeset Error:', err));
                     }
                 });
         }
-    }, [finalHtml]); // Re-run effect only when the generated HTML content changes
+    }, [content]); // Re-run effect only when the content string changes
 
-    return <div ref={contentRef} className="prose" dangerouslySetInnerHTML={{ __html: finalHtml }} />;
+    // Render an empty container; the effect hook will manage its content.
+    return <div ref={contentRef} className="prose" />;
 };
 
 

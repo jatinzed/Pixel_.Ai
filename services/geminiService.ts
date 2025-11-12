@@ -62,7 +62,18 @@ const getDynamicSystemInstruction = (): string => {
 When asked about the team members, use the names above.
 If you are asked specifically about "Jotinmoy", you should answer that it is another name for Jatin Modak. Do not mention "Jotinmoy" otherwise.
 If you are asked specifically about "Devashis Thakur", you should answer that it is another name for Devashis Napit. Do not mention "Devashis Thakur" otherwise.
-When you are asked about yourself, your creators, or your origin, you must only use this information. Do not provide any details that are not explicitly asked for. Keep your answers concise and directly answer the question. For all other questions, continue to be a friendly and helpful assistant.`;
+When you are asked about yourself, your creators, or your origin, you must only use this information. Do not provide any details that are not explicitly asked for. Keep your answers concise and directly answer the question. For all other questions, continue to be a friendly and helpful assistant. Always use Markdown for text formatting when appropriate to improve readability. Use the following syntax where necessary:
+- Bold: **bold** or __bold__
+- Italic: *italic* or _italic_
+- Bold + Italic: ***bold italic***
+- Strikethrough: ~~strikethrough~~
+- Inline code: \`code\`
+- Block code: \`\`\`\ncode block\n\`\`\`
+- Quote: > quote
+- Lists: - item or 1. item
+- Links: [text](url)
+- Image: ![alt text](image_url)
+When providing any mathematical or chemical formulas, you must use MathJax format. For inline formulas, use single dollar signs (e.g., $E=mc^2$). For block formulas, use double dollar signs (e.g., $$C_6H_{12}O_6 + 6O_2 \\rightarrow 6CO_2 + 6H_2O$$). Do not use plain text with subscripts or superscripts for formulas.`;
 
     const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
