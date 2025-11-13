@@ -109,6 +109,7 @@ const ReactionTally: React.FC<{ message: RoomMessage, currentUserId: string, onT
 
 const RoomMessageComponent: React.FC<RoomMessageComponentProps> = ({ message, currentUserId, onToggleReaction }) => {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [showAllSources, setShowAllSources] = useState(false);
   const availableReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
   
   const isCurrentUser = message.senderId === currentUserId;
@@ -163,6 +164,9 @@ const RoomMessageComponent: React.FC<RoomMessageComponentProps> = ({ message, cu
     );
   }
 
+  const sources = message.groundingMetadata?.groundingChunks?.filter(c => c.web) || [];
+  const displayedSources = showAllSources ? sources : sources.slice(0, 2);
+
   if (isBot) {
      return (
         <div className="flex flex-col items-start">
@@ -171,21 +175,29 @@ const RoomMessageComponent: React.FC<RoomMessageComponentProps> = ({ message, cu
                 <div className={`${messageBubbleClass} rounded-bl-lg bg-gray-100 text-gray-800`}>
                     <p className="text-xs font-bold text-indigo-600 mb-1">Pixel AI</p>
                     <MessageContent content={message.text} />
-                     {Array.isArray(message.groundingMetadata?.groundingChunks) && message.groundingMetadata.groundingChunks.length > 0 && (
+                     {sources.length > 0 && (
                         <div className="mt-4 pt-3 border-t border-gray-200">
-                        <h4 className="text-xs font-semibold text-gray-500 mb-2">Sources:</h4>
-                        <ul className="space-y-2">
-                            {message.groundingMetadata.groundingChunks.map((chunk, index) => (
-                            chunk.web && (
-                                <li key={index} className="text-xs">
-                                <a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
-                                    <span className="bg-blue-100 text-blue-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded-full">{index + 1}</span>
-                                    <span className="truncate">{chunk.web.title || chunk.web.uri}</span>
-                                </a>
-                                </li>
-                            )
-                            ))}
-                        </ul>
+                            <h4 className="text-xs font-semibold text-gray-500 mb-2">Sources:</h4>
+                            <ul className="space-y-2">
+                                {displayedSources.map((chunk, index) => (
+                                chunk.web && (
+                                    <li key={index} className="text-xs">
+                                        <a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
+                                            <span className="bg-blue-100 text-blue-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded-full">{index + 1}</span>
+                                            <span className="truncate">{chunk.web.title || chunk.web.uri}</span>
+                                        </a>
+                                    </li>
+                                )
+                                ))}
+                            </ul>
+                            {sources.length > 2 && !showAllSources && (
+                                <button
+                                    onClick={() => setShowAllSources(true)}
+                                    className="text-xs font-semibold text-blue-600 hover:underline mt-2"
+                                >
+                                    Show {sources.length - 2} more
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>

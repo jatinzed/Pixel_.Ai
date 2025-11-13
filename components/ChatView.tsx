@@ -19,6 +19,7 @@ const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, 
     const timeRef = useRef<number>(0);
     const [isInteracting, setIsInteracting] = useState(false);
     const [sources, setSources] = useState<GroundingChunk[]>([]);
+    const [showAllSources, setShowAllSources] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const isNewTurn = useRef(true);
 
@@ -140,6 +141,7 @@ const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, 
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             microphoneStream.current = stream;
             setSources([]);
+            setShowAllSources(false);
             isNewTurn.current = true;
 
             inputAudioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -202,6 +204,7 @@ const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, 
 
                     if (hasContent && isNewTurn.current) {
                         setSources([]); // Clear sources from previous turn
+                        setShowAllSources(false);
                         isNewTurn.current = false;
                     }
 
@@ -279,6 +282,7 @@ const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, 
         cleanup();
         setIsInteracting(false);
         setSources([]);
+        setShowAllSources(false);
     };
 
     const handleToggleMic = () => {
@@ -292,6 +296,9 @@ const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, 
     useEffect(() => {
         return cleanup;
     }, []);
+    
+    const webSources = sources.filter(chunk => chunk.web);
+    const displayedSources = showAllSources ? webSources : webSources.slice(0, 2);
 
     return (
         <div className="fixed inset-0 bg-white z-50 flex flex-col animate-fade-in">
@@ -305,12 +312,12 @@ const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, 
             <main className="flex-1 flex flex-col items-center justify-center relative">
                 <canvas ref={canvasRef} width="1000" height="200" className="absolute top-1/2 left-0 w-full h-48 -translate-y-1/2" />
                 
-                 {sources.length > 0 && (
+                 {webSources.length > 0 && (
                     <div className="absolute top-16 w-full max-w-3xl mx-auto px-4">
                         <div className="bg-white/80 backdrop-blur-sm rounded-lg p-3 shadow-md">
                             <h4 className="text-xs font-semibold text-gray-600 mb-2">Sources:</h4>
-                            <ul className="space-y-1 max-h-24 overflow-y-auto">
-                                {sources.map((chunk, index) => (
+                            <ul className="space-y-1 max-h-40 overflow-y-auto">
+                                {displayedSources.map((chunk, index) => (
                                     chunk.web && (
                                         <li key={index} className="text-xs">
                                             <a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
@@ -321,6 +328,14 @@ const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, 
                                     )
                                 ))}
                             </ul>
+                             {webSources.length > 2 && !showAllSources && (
+                                <button
+                                    onClick={() => setShowAllSources(true)}
+                                    className="text-xs font-semibold text-blue-600 hover:underline mt-2"
+                                >
+                                    Show {webSources.length - 2} more
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}

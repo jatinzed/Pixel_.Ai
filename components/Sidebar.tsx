@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { PlusIcon, ImageIcon, MessageIcon, ChevronDoubleLeftIcon, HashtagIcon, PlusCircleIcon, ArrowRightIcon, PaperAirplaneIcon, QuestionMarkCircleIcon } from './Icons';
+import { PlusIcon, ImageIcon, MessageIcon, ChevronDoubleLeftIcon, HashtagIcon, PlusCircleIcon, PaperAirplaneIcon } from './Icons';
 import { Conversation, Room } from '../types';
 
 interface SidebarProps {
@@ -15,7 +15,6 @@ interface SidebarProps {
     onOpenNotepad: () => void;
     onOpenRoomModal: () => void;
     onOpenTelegramModal: () => void;
-    onOpenHelpModal: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -30,7 +29,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     onOpenNotepad,
     onOpenRoomModal,
     onOpenTelegramModal,
-    onOpenHelpModal,
 }) => {
   return (
     <aside className="h-full bg-white flex flex-col border-r border-gray-100 overflow-hidden">
@@ -62,14 +60,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                   onClick={onOpenTelegramModal}
                   className="p-3 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
                     <PaperAirplaneIcon className="w-6 h-6" />
-                </button>
-                <button 
-                  onClick={onOpenHelpModal}
-                  className="p-3 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition"
-                  aria-label="Open formatting help"
-                  title="Formatting help"
-                  >
-                    <QuestionMarkCircleIcon className="w-6 h-6" />
                 </button>
             </div>
             

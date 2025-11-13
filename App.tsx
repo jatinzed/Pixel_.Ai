@@ -5,7 +5,6 @@ import RoomView from './components/RoomView';
 import NotepadModal from './components/NotepadModal';
 import RoomModal from './components/RoomModal';
 import TelegramModal from './components/TelegramModal';
-import HelpModal from './components/HelpModal';
 import { MenuIcon } from './components/Icons';
 import { Conversation, Message, Room, TelegramCredentials, TelegramRecipient } from './types';
 import { startChat, sendMessageStream, askQuestion, sendTelegramMessage } from './services/geminiService';
@@ -36,7 +35,6 @@ const App: React.FC = () => {
   const [isNotepadOpen, setIsNotepadOpen] = useState(false);
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
-  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [userId, setUserId] = useState<string>('');
   const [notepadContent, setNotepadContent] = useState('');
   const [telegramCredentials, setTelegramCredentials] = useState<TelegramCredentials | null>(null);
@@ -156,8 +154,6 @@ const App: React.FC = () => {
   const handleCloseRoomModal = () => setIsRoomModalOpen(false);
   const handleOpenTelegramModal = () => setIsTelegramModalOpen(true);
   const handleCloseTelegramModal = () => setIsTelegramModalOpen(false);
-  const handleOpenHelpModal = () => setIsHelpModalOpen(true);
-  const handleCloseHelpModal = () => setIsHelpModalOpen(false);
   
   const handleSaveTelegramCredentials = (token: string, recipients: TelegramRecipient[]) => {
       const creds = { token, recipients };
@@ -322,7 +318,6 @@ const App: React.FC = () => {
             onOpenNotepad={handleOpenNotepad}
             onOpenRoomModal={handleOpenRoomModal}
             onOpenTelegramModal={handleOpenTelegramModal}
-            onOpenHelpModal={handleOpenHelpModal}
           />
         </div>
 
@@ -379,10 +374,6 @@ const App: React.FC = () => {
         onSave={handleSaveTelegramCredentials}
         initialToken={telegramCredentials?.token}
         initialRecipients={telegramCredentials?.recipients}
-      />
-       <HelpModal
-        isOpen={isHelpModalOpen}
-        onClose={handleCloseHelpModal}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 
-import React, { useLayoutEffect, useRef, useMemo } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Message } from '../types';
 import { UserAvatar, BotAvatar } from './Icons';
 
@@ -74,6 +74,7 @@ const AiMessageContent: React.FC<{ content: string }> = ({ content }) => {
 
 const ChatMessage: React.FC<{ message: Message }> = ({ message }) => {
   const isUser = message.role === 'user';
+  const [showAllSources, setShowAllSources] = useState(false);
 
   if (isUser) {
     return (
@@ -88,17 +89,20 @@ const ChatMessage: React.FC<{ message: Message }> = ({ message }) => {
     );
   }
 
+  const sources = message.groundingMetadata?.groundingChunks?.filter(c => c.web) || [];
+  const displayedSources = showAllSources ? sources : sources.slice(0, 2);
+
   return (
     <div className="flex justify-start">
       <div className="flex items-start gap-3">
         <BotAvatar className="w-8 h-8 flex-shrink-0" />
         <div className="bg-gray-100 text-gray-800 py-3 px-5 rounded-3xl rounded-bl-lg max-w-2xl">
           <AiMessageContent content={message.content} />
-          {Array.isArray(message.groundingMetadata?.groundingChunks) && message.groundingMetadata.groundingChunks.length > 0 && (
+          {sources.length > 0 && (
             <div className="mt-4 pt-3 border-t border-gray-200">
               <h4 className="text-xs font-semibold text-gray-500 mb-2">Sources:</h4>
               <ul className="space-y-2">
-                {message.groundingMetadata.groundingChunks.map((chunk, index) => (
+                {displayedSources.map((chunk, index) => (
                   chunk.web && (
                     <li key={index} className="text-xs">
                       <a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
@@ -109,6 +113,14 @@ const ChatMessage: React.FC<{ message: Message }> = ({ message }) => {
                   )
                 ))}
               </ul>
+              {sources.length > 2 && !showAllSources && (
+                <button
+                  onClick={() => setShowAllSources(true)}
+                  className="text-xs font-semibold text-blue-600 hover:underline mt-2"
+                >
+                  Show {sources.length - 2} more
+                </button>
+              )}
             </div>
           )}
         </div>
