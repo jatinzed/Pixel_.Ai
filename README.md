@@ -128,12 +128,11 @@ To enable real-time chat rooms, you need to create a free Firebase project.
 
 - **Step 4: Add Config to Environment Variables**
     1. Copy the `firebaseConfig` object.
-    2. In your `.env.local` file, add a new variable `VITE_FIREBASE_CONFIG`.
+    2. In your `.env.local` file (or Vercel Environment Variables), add a new variable `VITE_FIREBASE_API`.
     3. Paste the config object as a single-line JSON string:
        ```
-       VITE_FIREBASE_CONFIG={"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}
+       VITE_FIREBASE_API={"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"...","measurementId":"..."}
        ```
-    *Note: The application contains a hardcoded fallback configuration for quick testing, but it will prioritize and use the one you provide in your environment variables.*
 
 **4. Run the App**
 ```bash

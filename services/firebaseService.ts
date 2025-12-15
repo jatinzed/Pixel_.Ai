@@ -16,31 +16,23 @@ import {
 } from "firebase/firestore";
 import type { Room, RoomMessage } from '../types';
 
-// Hardcoded config as a fallback for testing
-const firebaseConfig: FirebaseOptions = {
-    apiKey: "AIzaSyC2okxLCbWu8aRVxHzzzf3awh36B25UKPU",
-    authDomain: "pixel-ai-10c0e.firebaseapp.com",
-    projectId: "pixel-ai-10c0e",
-    storageBucket: "pixel-ai-10c0e.firebasestorage.app",
-    messagingSenderId: "864827888165",
-    appId: "1:864827888165:web:836e121bdbb8e5778425cc",
-    measurementId: "G-S8XFC4B27V"
-};
+let firebaseConfig: FirebaseOptions;
 
-// Prioritize environment variable if it exists
-let finalConfig = firebaseConfig;
 try {
-    // Vite uses import.meta.env. Check for its existence to avoid runtime errors
-    // in environments where it might be undefined.
+    // Vite exposes env variables on import.meta.env
     const env = (import.meta as any)?.env;
-    if (env && env.VITE_FIREBASE_CONFIG) {
-        finalConfig = JSON.parse(env.VITE_FIREBASE_CONFIG);
+    if (env && env.VITE_FIREBASE_API) {
+        // The user is expected to provide the full JSON config string in this variable
+        firebaseConfig = JSON.parse(env.VITE_FIREBASE_API);
+    } else {
+        throw new Error("VITE_FIREBASE_API environment variable is missing.");
     }
 } catch (error) {
-    console.error("Failed to parse VITE_FIREBASE_CONFIG. Using hardcoded fallback.", error);
+    console.error("Failed to load Firebase configuration. Please check your .env settings.", error);
+    throw new Error("Firebase configuration invalid or missing.");
 }
 
-const app = initializeApp(finalConfig);
+const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 const roomsCollection = collection(db, "rooms");
@@ -109,6 +101,8 @@ export const listenToUserRooms = (userId: string, callback: (rooms: Room[]) => v
             rooms.push(doc.data() as Room);
         });
         callback(rooms);
+    }, (error) => {
+        console.error("Error listening to rooms:", error);
     });
 
     return unsubscribe;

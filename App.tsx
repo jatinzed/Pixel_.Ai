@@ -40,6 +40,7 @@ const App: React.FC = () => {
   const [telegramCredentials, setTelegramCredentials] = useState<TelegramCredentials | null>(null);
   const [initializationError, setInitializationError] = useState<string | null>(null);
 
+  // Initialize User ID
   useEffect(() => {
     setUserId(getUserId());
   }, []);
@@ -127,13 +128,17 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!userId) return;
     
-    const unsubscribe = listenToUserRooms(userId, (updatedRooms) => {
-        setRooms(updatedRooms);
-    });
+    try {
+        const unsubscribe = listenToUserRooms(userId, (updatedRooms) => {
+            setRooms(updatedRooms);
+        });
 
-    return () => {
-        unsubscribe();
-    };
+        return () => {
+            unsubscribe();
+        };
+    } catch (e) {
+        console.error("Firebase connection failed. Check VITE_FIREBASE_API env var.", e);
+    }
   }, [userId]);
   
     // Load Telegram credentials from local storage
