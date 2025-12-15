@@ -1,4 +1,4 @@
-import { initializeApp, FirebaseOptions } from "firebase/app";
+import { initializeApp } from "firebase/app";
 import { 
     getFirestore,
     doc,
@@ -16,28 +16,38 @@ import {
 } from "firebase/firestore";
 import type { Room, RoomMessage } from '../types';
 
-let firebaseConfig: FirebaseOptions;
+// Global variables to store Firebase instances
+let app: any = null;
+let db: any = null;
+let roomsCollection: any = null;
 
+// Initialize Firebase safely.
+// We do NOT throw an error here to avoid crashing the entire application (black screen)
+// if the environment variable is missing. Instead, we log a warning.
 try {
-    // Vite exposes env variables on import.meta.env
     const env = (import.meta as any)?.env;
     if (env && env.VITE_FIREBASE_API) {
-        // The user is expected to provide the full JSON config string in this variable
-        firebaseConfig = JSON.parse(env.VITE_FIREBASE_API);
+        const firebaseConfig = JSON.parse(env.VITE_FIREBASE_API);
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        roomsCollection = collection(db, "rooms");
+        console.log("Firebase initialized successfully.");
     } else {
-        throw new Error("VITE_FIREBASE_API environment variable is missing.");
+        console.warn("VITE_FIREBASE_API environment variable is missing. Chat rooms will be disabled.");
     }
 } catch (error) {
-    console.error("Failed to load Firebase configuration. Please check your .env settings.", error);
-    throw new Error("Firebase configuration invalid or missing.");
+    console.error("Failed to initialize Firebase. Check your VITE_FIREBASE_API JSON format.", error);
 }
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-const roomsCollection = collection(db, "rooms");
+// Helper to check if Firebase is ready
+const ensureInitialized = () => {
+    if (!db || !roomsCollection) {
+        throw new Error("Firebase is not initialized. Please check your VITE_FIREBASE_API environment variable.");
+    }
+};
 
 export const createRoom = async (userId: string): Promise<string> => {
+    ensureInitialized();
     const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     const newRoom: Room = {
       id: roomCode,
@@ -56,6 +66,7 @@ export const createRoom = async (userId: string): Promise<string> => {
 };
 
 export const joinRoom = async (roomCode: string, userId: string): Promise<void> => {
+    ensureInitialized();
     const roomRef = doc(roomsCollection, roomCode);
     const roomSnap = await getDoc(roomRef);
 
@@ -93,6 +104,13 @@ export const joinRoom = async (roomCode: string, userId: string): Promise<void> 
 };
 
 export const listenToUserRooms = (userId: string, callback: (rooms: Room[]) => void): (() => void) => {
+    // Return a dummy unsubscribe function if Firebase isn't ready
+    // This prevents App.tsx from crashing when it tries to call unsubscribe()
+    if (!db || !roomsCollection) {
+        console.warn("Firebase not initialized; skipping room listener.");
+        return () => {}; 
+    }
+
     const q = query(roomsCollection, where('memberIds', 'array-contains', userId));
     
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -109,6 +127,7 @@ export const listenToUserRooms = (userId: string, callback: (rooms: Room[]) => v
 };
 
 export const sendRoomMessage = async (roomId: string, messageData: Omit<RoomMessage, 'id' | 'timestamp' | 'reactions'>): Promise<void> => {
+    ensureInitialized();
     const roomRef = doc(roomsCollection, roomId);
     
     const newMessage: RoomMessage = {
@@ -124,6 +143,7 @@ export const sendRoomMessage = async (roomId: string, messageData: Omit<RoomMess
 };
 
 export const toggleReaction = async (roomId: string, messageId: string, emoji: string, userId: string): Promise<void> => {
+    ensureInitialized();
     const roomRef = doc(roomsCollection, roomId);
 
     try {
