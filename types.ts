@@ -1,8 +1,8 @@
 import type { Chat } from '@google/genai';
 
 export interface WebGroundingSource {
-  uri: string;
-  title: string;
+  uri?: string;
+  title?: string;
 }
 
 export interface GroundingChunk {
@@ -57,4 +57,12 @@ export interface TelegramRecipient {
 export interface TelegramCredentials {
   token: string;
   recipients: TelegramRecipient[];
+}
+
+// Types for Notepad
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  updatedAt: number;
 }

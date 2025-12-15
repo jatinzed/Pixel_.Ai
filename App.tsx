@@ -6,7 +6,7 @@ import NotepadModal from './components/NotepadModal';
 import RoomModal from './components/RoomModal';
 import TelegramModal from './components/TelegramModal';
 import { MenuIcon } from './components/Icons';
-import { Conversation, Message, Room, TelegramCredentials, TelegramRecipient } from './types';
+import { Conversation, Message, Room, TelegramCredentials, TelegramRecipient, Note } from './types';
 import { startChat, sendMessageStream, askQuestion, sendTelegramMessage } from './services/geminiService';
 import { createRoom, joinRoom, listenToUserRooms, sendRoomMessage as sendFirebaseRoomMessage, toggleReaction as toggleFirebaseReaction } from './services/firebaseService';
 
@@ -36,7 +36,10 @@ const App: React.FC = () => {
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
   const [userId, setUserId] = useState<string>('');
-  const [notepadContent, setNotepadContent] = useState('');
+  
+  // Changed from simple string content to an array of notes
+  const [notes, setNotes] = useState<Note[]>([]);
+  
   const [telegramCredentials, setTelegramCredentials] = useState<TelegramCredentials | null>(null);
   const [initializationError, setInitializationError] = useState<string | null>(null);
 
@@ -107,22 +110,44 @@ const App: React.FC = () => {
       }
   }, [conversations, userId]);
   
-  // Load Notepad Content
+  // Load Notes
   useEffect(() => {
     if (!userId) return;
     const key = `${NOTEPAD_KEY_PREFIX}${userId}`;
     const savedContent = localStorage.getItem(key);
+    
     if (savedContent) {
-      setNotepadContent(savedContent);
+        try {
+            // Try to parse as JSON (new format)
+            const parsed = JSON.parse(savedContent);
+            if (Array.isArray(parsed)) {
+                setNotes(parsed);
+            } else {
+                // Handle legacy JSON object if any, or convert single string to array
+                // If it's a valid JSON but not array, wrap it? Assume legacy was simple string or invalid.
+                throw new Error("Not an array");
+            }
+        } catch (e) {
+            // Fallback for legacy plain text content: create a single note from it
+            // This ensures user data isn't lost when upgrading to the new note system.
+            if (savedContent.trim().length > 0) {
+                setNotes([{
+                    id: Date.now().toString(),
+                    title: 'My Notes',
+                    content: savedContent,
+                    updatedAt: Date.now()
+                }]);
+            }
+        }
     }
   }, [userId]);
 
-  // Save Notepad Content
+  // Save Notes
   useEffect(() => {
     if (!userId) return;
     const key = `${NOTEPAD_KEY_PREFIX}${userId}`;
-    localStorage.setItem(key, notepadContent);
-  }, [notepadContent, userId]);
+    localStorage.setItem(key, JSON.stringify(notes));
+  }, [notes, userId]);
   
   // Set up real-time listener for chat rooms from Firebase
   useEffect(() => {
@@ -295,7 +320,7 @@ const App: React.FC = () => {
 
   if (initializationError) {
       return (
-          <div className="flex items-center justify-center h-screen w-screen bg-red-50 text-red-800 font-sans">
+          <div className="flex items-center justify-center h-screen w-screen bg-red-50 text-red-800">
               <div className="text-center p-8 bg-white shadow-2xl rounded-lg max-w-md mx-4">
                   <h1 className="text-2xl font-bold mb-4">Application Configuration Error</h1>
                   <p className="text-gray-700">{initializationError}</p>
@@ -309,7 +334,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="h-screen w-screen font-sans flex overflow-hidden">
+    <div className="h-screen w-screen flex overflow-hidden">
         <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-[280px]' : 'w-0'}`}>
           <Sidebar
             conversations={conversations}
@@ -364,8 +389,8 @@ const App: React.FC = () => {
       <NotepadModal 
         isOpen={isNotepadOpen} 
         onClose={handleCloseNotepad} 
-        content={notepadContent}
-        onContentChange={setNotepadContent}
+        notes={notes}
+        onUpdateNotes={setNotes}
       />
       <RoomModal 
         isOpen={isRoomModalOpen} 

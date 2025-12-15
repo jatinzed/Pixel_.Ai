@@ -1,3 +1,4 @@
+// @ts-ignore
 import { initializeApp } from "firebase/app";
 import { 
     getFirestore,
@@ -21,28 +22,52 @@ let app: any = null;
 let db: any = null;
 let roomsCollection: any = null;
 
+// Default hardcoded configuration
+// This is used if the environment variable VITE_FIREBASE_API is not found.
+const defaultFirebaseConfig = {
+  apiKey: "AIzaSyCYNBu8LhVT_W2GDzFiUeM4eohShG0GmiM",
+  authDomain: "project-63a14c3a-ccaa-458e-a85.firebaseapp.com",
+  databaseURL: "https://project-63a14c3a-ccaa-458e-a85-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "project-63a14c3a-ccaa-458e-a85",
+  storageBucket: "project-63a14c3a-ccaa-458e-a85.firebasestorage.app",
+  messagingSenderId: "475658142909",
+  appId: "1:475658142909:web:401806854d41ff6822e3d4",
+  measurementId: "G-P3SC985194"
+};
+
 // Initialize Firebase safely.
-// We do NOT throw an error here to avoid crashing the entire application (black screen)
-// if the environment variable is missing. Instead, we log a warning.
+// We prioritize the environment variable, but fall back to the hardcoded config.
 try {
     const env = (import.meta as any)?.env;
+    let firebaseConfig = defaultFirebaseConfig;
+
     if (env && env.VITE_FIREBASE_API) {
-        const firebaseConfig = JSON.parse(env.VITE_FIREBASE_API);
-        app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        roomsCollection = collection(db, "rooms");
-        console.log("Firebase initialized successfully.");
+        try {
+            const parsedConfig = JSON.parse(env.VITE_FIREBASE_API);
+            if (parsedConfig) {
+                firebaseConfig = parsedConfig;
+                console.log("Using Firebase config from environment variable.");
+            }
+        } catch (e) {
+            console.warn("VITE_FIREBASE_API provided but invalid JSON. Falling back to hardcoded config.");
+        }
     } else {
-        console.warn("VITE_FIREBASE_API environment variable is missing. Chat rooms will be disabled.");
+        console.log("VITE_FIREBASE_API not found. Using hardcoded Firebase config.");
     }
+
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    roomsCollection = collection(db, "rooms");
+    console.log("Firebase initialized successfully.");
+
 } catch (error) {
-    console.error("Failed to initialize Firebase. Check your VITE_FIREBASE_API JSON format.", error);
+    console.error("Failed to initialize Firebase.", error);
 }
 
 // Helper to check if Firebase is ready
 const ensureInitialized = () => {
     if (!db || !roomsCollection) {
-        throw new Error("Firebase is not initialized. Please check your VITE_FIREBASE_API environment variable.");
+        throw new Error("Firebase is not initialized. Please check your configuration.");
     }
 };
 

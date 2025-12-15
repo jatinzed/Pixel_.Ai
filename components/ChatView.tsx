@@ -4,8 +4,10 @@ import type { Conversation, TelegramCredentials, TelegramRecipient, GroundingChu
 import ChatMessage from './ChatMessage';
 import { SendIcon, PixelBotIcon, BotAvatar, MicrophoneIcon, ChevronDownIcon, PauseIcon, AttachmentIcon } from './Icons';
 import { connectToLiveSession, createBlob, decode, decodeAudioData } from '../services/geminiService';
-import type { LiveSession, LiveServerMessage, FunctionDeclaration } from '@google/genai';
+import type { LiveServerMessage, FunctionDeclaration } from '@google/genai';
 import { Type } from '@google/genai';
+
+type LiveSession = Awaited<ReturnType<typeof connectToLiveSession>>;
 
 interface LiveVoiceViewProps {
   onClose: () => void;
@@ -15,7 +17,7 @@ interface LiveVoiceViewProps {
 
 const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, telegramRecipients }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const animationFrameRef = useRef<number>();
+    const animationFrameRef = useRef<number | null>(null);
     const timeRef = useRef<number>(0);
     const [isInteracting, setIsInteracting] = useState(false);
     const [sources, setSources] = useState<GroundingChunk[]>([]);
@@ -180,7 +182,8 @@ const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, 
                 },
             };
 
-            const tools = [{ functionDeclarations: [sendTelegramFunctionDeclaration] }, {googleSearch: {}}];
+            // FIX: Removed googleSearch from Live tools to prevent Network Errors
+            const tools = [{ functionDeclarations: [sendTelegramFunctionDeclaration] }];
 
             sessionPromise.current = connectToLiveSession({
                 onopen: () => {
@@ -215,8 +218,9 @@ const LiveVoiceView: React.FC<LiveVoiceViewProps> = ({ onClose, onSendTelegram, 
                     if (message.toolCall) {
                         for (const fc of message.toolCall.functionCalls) {
                             if (fc.name === 'send_telegram_message') {
-                                const recipientName = fc.args.recipient_name;
-                                const text = fc.args.message;
+                                const args = fc.args as any;
+                                const recipientName = args.recipient_name;
+                                const text = args.message;
                                 const recipient = telegramRecipients.find(r => r.name.toLowerCase() === recipientName?.toLowerCase());
                                 
                                 let result;

@@ -18,15 +18,28 @@
     </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['SamsungSharp', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            },
+          },
+        },
+      }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
     <style>
       @font-face {
           font-family: "SamsungSharp";
-          src: url("https://raw.githubusercontent.com/jatinzed/Samsung_sharp_sans_bold/main/Samsung-Sharp-Sans-Bold.ttf") format("truetype");
+          src: url("https://cdn.jsdelivr.net/gh/jatinzed/Samsung_sharp_sans_bold@main/Samsung-Sharp-Sans-Bold.ttf") format("truetype");
+          font-weight: normal;
+          font-style: normal;
       }
       body {
-          font-family: "SamsungSharp";
+          font-family: "SamsungSharp", sans-serif;
       }
       .prose {
         color: #374151;
