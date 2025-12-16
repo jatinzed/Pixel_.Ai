@@ -23,7 +23,7 @@ const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage,
 
     const handleSend = () => {
         const trimmedInput = input.trim();
-        if (!trimmedInput || isLoading) return;
+        if (!trimmedInput) return; // Allow sending even if isLoading for optimistic feel
 
         if (trimmedInput.startsWith('/ask ')) {
             const question = trimmedInput.substring(5);
@@ -57,13 +57,6 @@ const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage,
                             onToggleReaction={onToggleReaction}
                         />
                     ))}
-                    {isLoading && room.messages[room.messages.length - 1]?.senderId === currentUserId && (
-                        <div className="flex items-start space-x-4">
-                            <div className="flex items-center space-x-1 mt-3">
-                                <p className="text-sm text-gray-500 italic">Pixel AI is thinking...</p>
-                            </div>
-                        </div>
-                    )}
                     <div ref={messagesEndRef} />
                 </div>
             </div>
@@ -78,11 +71,10 @@ const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage,
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                             placeholder="Type a message or use /ask to query AI"
                             className="flex-1 bg-transparent border-none text-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-0 px-4"
-                            disabled={isLoading}
                         />
                         <button
                             onClick={handleSend}
-                            disabled={isLoading || !input.trim()}
+                            disabled={!input.trim()}
                             className="p-2.5 rounded-full bg-[#6A5BFF] text-white hover:bg-opacity-90 disabled:bg-gray-300 transition-colors"
                         >
                             <SendIcon className="w-5 h-5 transform rotate-90" />

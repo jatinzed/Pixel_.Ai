@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow public read/write access to all documents
+    // This is necessary if Anonymous Authentication is not enabled in the Firebase Console
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

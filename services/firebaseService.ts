@@ -1,29 +1,35 @@
 // @ts-ignore
 import { initializeApp } from "firebase/app";
 import { 
+    getAuth, 
+    signInAnonymously, 
+    onAuthStateChanged,
+    User
+} from "firebase/auth";
+import { 
     getFirestore,
+    collection,
     doc,
     setDoc,
     getDoc,
+    addDoc,
     updateDoc,
     arrayUnion,
-    collection,
+    onSnapshot,
     query,
     where,
-    onSnapshot,
+    orderBy,
+    serverTimestamp,
     runTransaction,
     DocumentReference,
-    DocumentData
+    DocumentData,
+    enableIndexedDbPersistence,
+    initializeFirestore,
+    CACHE_SIZE_UNLIMITED
 } from "firebase/firestore";
 import type { Room, RoomMessage } from '../types';
 
-// Global variables to store Firebase instances
-let app: any = null;
-let db: any = null;
-let roomsCollection: any = null;
-
-// Default hardcoded configuration
-// This is used if the environment variable VITE_FIREBASE_API is not found.
+// Default configuration
 const defaultFirebaseConfig = {
   apiKey: "AIzaSyCYNBu8LhVT_W2GDzFiUeM4eohShG0GmiM",
   authDomain: "project-63a14c3a-ccaa-458e-a85.firebaseapp.com",
@@ -35,178 +41,225 @@ const defaultFirebaseConfig = {
   measurementId: "G-P3SC985194"
 };
 
-// Initialize Firebase safely.
-// We prioritize the environment variable, but fall back to the hardcoded config.
-try {
-    const env = (import.meta as any)?.env;
-    let firebaseConfig = defaultFirebaseConfig;
+// Initialize Firebase
+let app: any;
+let auth: any;
+let db: any;
 
-    if (env && env.VITE_FIREBASE_API) {
+const initFirebase = () => {
+    if (app && db && auth) return; // Already initialized
+    try {
+        app = initializeApp(defaultFirebaseConfig);
+        auth = getAuth(app);
+        
+        // Attempt to initialize with offline persistence
         try {
-            const parsedConfig = JSON.parse(env.VITE_FIREBASE_API);
-            if (parsedConfig) {
-                firebaseConfig = parsedConfig;
-                console.log("Using Firebase config from environment variable.");
-            }
+             db = initializeFirestore(app, {
+                cacheSizeBytes: CACHE_SIZE_UNLIMITED
+             });
         } catch (e) {
-            console.warn("VITE_FIREBASE_API provided but invalid JSON. Falling back to hardcoded config.");
+             console.warn("Falling back to default Firestore init", e);
+             db = getFirestore(app);
         }
-    } else {
-        console.log("VITE_FIREBASE_API not found. Using hardcoded Firebase config.");
+
+        console.log("Firebase initialized successfully");
+    } catch (e) {
+        console.error("Firebase initialization failed critical error:", e);
     }
-
-    app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    roomsCollection = collection(db, "rooms");
-    console.log("Firebase initialized successfully.");
-
-} catch (error) {
-    console.error("Failed to initialize Firebase.", error);
 }
 
-// Helper to check if Firebase is ready
-const ensureInitialized = () => {
-    if (!db || !roomsCollection) {
-        throw new Error("Firebase is not initialized. Please check your configuration.");
-    }
+// Attempt init immediately
+initFirebase();
+
+// 1. Authentication
+export const login = (): Promise<User> => {
+    return new Promise((resolve, reject) => {
+        if (!auth) initFirebase();
+        
+        if (!auth) {
+             console.warn("Auth module missing. Using guest mode.");
+             resolve({ uid: `guest_${Math.random().toString(36).substring(2, 10)}`, isAnonymous: true } as any);
+             return;
+        }
+
+        const unsubscribe = onAuthStateChanged(auth, (user: User | null) => {
+            if (user) {
+                unsubscribe();
+                resolve(user);
+            } else {
+                signInAnonymously(auth).catch((err) => {
+                    unsubscribe();
+                    console.warn("Anonymous login failed, using fallback guest ID.", err);
+                    resolve({ uid: `guest_${Math.random().toString(36).substring(2, 10)}`, isAnonymous: true } as any);
+                });
+            }
+        });
+    });
 };
 
-export const createRoom = async (userId: string): Promise<string> => {
-    ensureInitialized();
-    const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const newRoom: Room = {
-      id: roomCode,
-      name: `Room ${roomCode}`,
-      memberIds: [userId, 'PixelBot'],
-      messages: [{
-        id: Date.now().toString(),
-        senderId: 'PixelBot',
-        text: `Welcome to the room! Your room code is ${roomCode}. Share it with others to invite them.`,
-        timestamp: new Date().toISOString(),
-        reactions: {}
-      }],
-    };
-    await setDoc(doc(roomsCollection, roomCode), newRoom);
+// 2. Room Code Generator
+export function generateRoomCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+// 3. Create Room Logic (FAST & OFFLINE READY)
+export const createRoom = async (userId: string, customCode?: string): Promise<string> => {
+    if (!db) initFirebase();
+    
+    // Use the code provided by the UI, or generate one
+    const roomCode = customCode || generateRoomCode();
+    
+    // We do NOT check for existence first. We assume collision is rare (36^6 possibilities).
+    // This allows "setDoc" to work immediately even if offline.
+    const roomRef = doc(db, "rooms", roomCode);
+    const messagesRef = collection(db, "rooms", roomCode, "messages");
+
+    try {
+        // Fire and forget - await ensures it's queued, but doesn't strictly wait for server ack if offline
+        await setDoc(roomRef, {
+            id: roomCode,
+            name: `Room ${roomCode}`,
+            createdAt: serverTimestamp(),
+            createdBy: userId,
+            memberIds: [userId, 'PixelBot'] 
+        });
+
+        await addDoc(messagesRef, {
+            text: `Welcome to Room ${roomCode}! Share this code with friends.`,
+            senderId: 'PixelBot',
+            timestamp: serverTimestamp(),
+            reactions: {}
+        });
+    } catch (e: any) {
+        console.error("Error creating room:", e);
+        // If it's a permission error, throw it. Otherwise, assume offline queueing worked.
+        if (e.code === 'permission-denied') {
+             throw new Error("Permission denied. Check Firestore rules.");
+        } 
+    }
+
     return roomCode;
 };
 
+// 4. Join Room Logic
 export const joinRoom = async (roomCode: string, userId: string): Promise<void> => {
-    ensureInitialized();
-    const roomRef = doc(roomsCollection, roomCode);
-    const roomSnap = await getDoc(roomRef);
+    if (!db) initFirebase();
+    if (!db) throw new Error("Database connection not established.");
 
-    if (roomSnap.exists()) {
-        const roomData = roomSnap.data() as Room;
-        if (!roomData.memberIds.includes(userId)) {
-            const joinMessage: RoomMessage = {
-                id: Date.now().toString(),
-                senderId: 'PixelBot',
-                text: `User ${userId.substring(5)} has joined the room.`,
-                timestamp: new Date().toISOString(),
-                reactions: {},
-            };
-            await updateDoc(roomRef, {
-                memberIds: arrayUnion(userId),
-                messages: arrayUnion(joinMessage),
-            });
+    const cleanCode = roomCode.trim().toUpperCase();
+    const roomRef = doc(db, "rooms", cleanCode);
+    
+    try {
+        // We MUST wait for server check here to ensure room exists
+        const snapshot = await getDoc(roomRef);
+
+        if (!snapshot.exists()) {
+            throw new Error("Room not found. Please ask the creator to check the code.");
         }
-    } else {
-        // Room doesn't exist, create it
-        const newRoom: Room = {
-            id: roomCode,
-            name: `Room ${roomCode}`,
-            memberIds: [userId, 'PixelBot'],
-            messages: [{
-                id: Date.now().toString(),
-                senderId: 'PixelBot',
-                text: 'Welcome! You have created and joined the room.',
-                timestamp: new Date().toISOString(),
-                reactions: {}
-            }],
-        };
-        await setDoc(roomRef, newRoom);
+
+        await updateDoc(roomRef, {
+            memberIds: arrayUnion(userId)
+        });
+        
+        await addDoc(collection(db, "rooms", cleanCode, "messages"), {
+            text: `User joined the room.`,
+            senderId: 'PixelBot',
+            timestamp: serverTimestamp(),
+            reactions: {}
+        });
+    } catch (e: any) {
+        if (e.message && e.message.includes("offline")) {
+             throw new Error("You are offline. Cannot find room. Check your internet.");
+        }
+        throw e;
     }
 };
 
-export const listenToUserRooms = (userId: string, callback: (rooms: Room[]) => void): (() => void) => {
-    // Return a dummy unsubscribe function if Firebase isn't ready
-    // This prevents App.tsx from crashing when it tries to call unsubscribe()
-    if (!db || !roomsCollection) {
-        console.warn("Firebase not initialized; skipping room listener.");
-        return () => {}; 
-    }
-
-    const q = query(roomsCollection, where('memberIds', 'array-contains', userId));
-    
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const rooms: Room[] = [];
-        querySnapshot.forEach((doc) => {
-            rooms.push(doc.data() as Room);
+// 5. Send Message Logic
+export const sendRoomMessage = async (roomId: string, messageData: { text: string, senderId: string, groundingMetadata?: any }): Promise<void> => {
+    if (!db) return;
+    try {
+        await addDoc(collection(db, "rooms", roomId, "messages"), {
+            text: messageData.text,
+            senderId: messageData.senderId,
+            timestamp: serverTimestamp(),
+            groundingMetadata: messageData.groundingMetadata || null,
+            reactions: {}
         });
+    } catch (e) {
+        console.error("Error sending message:", e);
+    }
+};
+
+// 6. Real-Time Message Listener
+export const listenToMessages = (roomId: string, callback: (messages: RoomMessage[]) => void): (() => void) => {
+    if (!db) return () => {};
+
+    const q = query(
+        collection(db, "rooms", roomId, "messages"),
+        orderBy("timestamp", "asc")
+    );
+
+    return onSnapshot(q, (snapshot) => {
+        const messages = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                senderId: data.senderId,
+                text: data.text,
+                timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : new Date().toISOString(),
+                reactions: data.reactions || {},
+                groundingMetadata: data.groundingMetadata
+            } as RoomMessage;
+        });
+        callback(messages);
+    }, (error) => {
+        console.error("Error listening to messages:", error);
+    });
+};
+
+// 7. Listen to User's Rooms
+export const listenToUserRooms = (userId: string, callback: (rooms: Room[]) => void): (() => void) => {
+    if (!db) return () => {};
+
+    const q = query(collection(db, "rooms"), where('memberIds', 'array-contains', userId));
+    
+    return onSnapshot(q, (snapshot) => {
+        const rooms = snapshot.docs.map(doc => ({
+            ...doc.data(),
+            id: doc.id,
+            messages: []
+        } as Room));
         callback(rooms);
     }, (error) => {
         console.error("Error listening to rooms:", error);
     });
-
-    return unsubscribe;
 };
 
-export const sendRoomMessage = async (roomId: string, messageData: Omit<RoomMessage, 'id' | 'timestamp' | 'reactions'>): Promise<void> => {
-    ensureInitialized();
-    const roomRef = doc(roomsCollection, roomId);
-    
-    const newMessage: RoomMessage = {
-        ...messageData,
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        reactions: {},
-    };
-
-    await updateDoc(roomRef, {
-        messages: arrayUnion(newMessage)
-    });
-};
-
+// 8. Toggle Reaction
 export const toggleReaction = async (roomId: string, messageId: string, emoji: string, userId: string): Promise<void> => {
-    ensureInitialized();
-    const roomRef = doc(roomsCollection, roomId);
+    if (!db) return;
+    const msgRef = doc(db, "rooms", roomId, "messages", messageId);
 
     try {
         await runTransaction(db, async (transaction) => {
-            const roomDoc = await transaction.get(roomRef as DocumentReference<DocumentData>);
-            if (!roomDoc.exists()) {
-                throw "Room does not exist!";
-            }
+            const msgDoc = await transaction.get(msgRef);
+            if (!msgDoc.exists()) return;
 
-            const roomData = roomDoc.data() as Room;
-            const messages = [...roomData.messages];
-            const messageIndex = messages.findIndex(m => m.id === messageId);
+            const data = msgDoc.data();
+            const reactions = data.reactions || {};
+            const currentUsers = reactions[emoji] || [];
 
-            if (messageIndex === -1) {
-                return; // Message not found
-            }
-
-            const message = { ...messages[messageIndex] };
-            const reactions = { ...(message.reactions || {}) };
-            const reactingUsers = reactions[emoji] || [];
-
-            if (reactingUsers.includes(userId)) {
-                // User is removing their reaction
-                reactions[emoji] = reactingUsers.filter(id => id !== userId);
-                if (reactions[emoji].length === 0) {
-                    delete reactions[emoji];
-                }
+            if (currentUsers.includes(userId)) {
+                reactions[emoji] = currentUsers.filter((id: string) => id !== userId);
+                if (reactions[emoji].length === 0) delete reactions[emoji];
             } else {
-                // User is adding a reaction
-                reactions[emoji] = [...reactingUsers, userId];
+                reactions[emoji] = [...currentUsers, userId];
             }
-            
-            message.reactions = reactions;
-            messages[messageIndex] = message;
 
-            transaction.update(roomRef, { messages });
+            transaction.update(msgRef, { reactions });
         });
     } catch (e) {
-        console.error("Transaction failed: ", e);
+        console.error("Reaction transaction failed", e);
     }
 };
