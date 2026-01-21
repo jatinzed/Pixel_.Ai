@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Message } from '../types';
-import { UserAvatar, BotAvatar, SparklesIcon, FolderPlusIcon } from './Icons';
+import { UserAvatar, BotAvatar, SparklesIcon, FolderPlusIcon, SpeakerIcon } from './Icons';
 import MarkdownRenderer from './MarkdownRenderer';
+import { generateSpeech, decode, decodeAudioData } from '../services/geminiService';
 
 interface ChatMessageProps {
     message: Message;
@@ -12,6 +13,7 @@ interface ChatMessageProps {
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, onSimplify, onAddToFolder }) => {
   const isUser = message.role === 'user';
   const [showAllSources, setShowAllSources] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   if (isUser) {
     return (
@@ -25,6 +27,28 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, onSimplify, onAddToF
       </div>
     );
   }
+
+  const handleListen = async () => {
+    if (isSpeaking) return;
+    setIsSpeaking(true);
+    try {
+        const audioData = await generateSpeech(message.content);
+        if (audioData) {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+            const buffer = await decodeAudioData(decode(audioData), ctx, 24000, 1);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.onended = () => setIsSpeaking(false);
+            source.start(0);
+        } else {
+            setIsSpeaking(false);
+        }
+    } catch (error) {
+        console.error("TTS Error:", error);
+        setIsSpeaking(false);
+    }
+  };
 
   const sources = message.groundingMetadata?.groundingChunks?.filter(c => c.web) || [];
   const displayedSources = showAllSources ? sources : sources.slice(0, 2);
@@ -84,6 +108,25 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, onSimplify, onAddToF
                     >
                         <SparklesIcon className="w-3.5 h-3.5" />
                         Easy Way
+                    </button>
+                    <button 
+                        onClick={handleListen}
+                        disabled={isSpeaking}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${isSpeaking ? 'bg-indigo-600 text-white animate-pulse' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                        title="Talk with answer"
+                    >
+                        {isSpeaking ? (
+                           <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
+                              <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                              <span>Talking...</span>
+                           </div>
+                        ) : (
+                          <>
+                            <SpeakerIcon className="w-3.5 h-3.5" />
+                            Listen
+                          </>
+                        )}
                     </button>
                     <button 
                         onClick={() => onAddToFolder?.(message.content)}

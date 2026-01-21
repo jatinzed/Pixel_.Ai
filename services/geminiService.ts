@@ -8,11 +8,10 @@ export const getAiClient = (): GoogleGenAI => {
         return ai;
     }
 
-    // Use environment variable if available, otherwise fallback to the hardcoded key provided by the user
     const apiKey = process.env.GEMINI_API_KEY || "AIzaSyCF2B8zGDzKpFQR48zStgq-pVMPb3hh16c";
     
     if (!apiKey) {
-        const errorMessage = "API key is not configured. Please set the GEMINI_API_KEY environment variable or check the hardcoded fallback.";
+        const errorMessage = "API key is not configured. Please set the GEMINI_API_KEY environment variable.";
         console.error(errorMessage);
         throw new Error(errorMessage);
     }
@@ -21,7 +20,8 @@ export const getAiClient = (): GoogleGenAI => {
     return ai;
 };
 
-const model = 'gemini-3-flash-preview';
+// Use Gemini 2.5 Flash as requested
+const model = 'gemini-2.5-flash';
 
 const getDynamicSystemInstruction = (): string => {
     return `
@@ -79,6 +79,26 @@ export const askQuestion = async (prompt: string): Promise<{ text: string, groun
         },
     });
     return { text: response.text, groundingMetadata: response.candidates?.[0]?.groundingMetadata };
+}
+
+// Text to Speech (TTS) Implementation
+export const generateSpeech = async (text: string): Promise<string | undefined> => {
+  const client = getAiClient();
+  // Using the preview TTS model for Gemini 2.5
+  const response = await client.models.generateContent({
+    model: "gemini-2.5-flash-preview-tts",
+    contents: [{ parts: [{ text: `Read this aloud: ${text}` }] }],
+    config: {
+      responseModalities: [Modality.AUDIO],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName: 'Kore' }, // Clear pedagogical voice
+        },
+      },
+    },
+  });
+  
+  return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 }
 
 export const generateStudyMaterial = async (content: string, type: 'quiz' | 'flashcards' | 'mindmap'): Promise<string> => {
