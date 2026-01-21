@@ -1,35 +1,27 @@
+
 import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content, FunctionDeclaration, Type, GenerateContentResponse } from "@google/genai";
 
 // --- Defensive AI Client Initialization ---
 let ai: GoogleGenAI | null = null;
 
 const getAiClient = (): GoogleGenAI => {
-    if (ai) {
-        return ai;
-    }
-
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-        const errorMessage = "Gemini API key is not configured. Please set the API_KEY environment variable in your deployment settings (e.g., Vercel Environment Variables).";
-        console.error(errorMessage);
-        throw new Error(errorMessage);
+        throw new Error("API_KEY environment variable is missing.");
     }
-    
-    ai = new GoogleGenAI({ apiKey });
-    return ai;
+    // Re-initialize to ensure fresh client with the correct key
+    return new GoogleGenAI({ apiKey });
 };
 
-// Use specified models from guidelines
+// Use gemini-3-flash-preview for best performance in text tasks as per guidelines
 const model = 'gemini-3-flash-preview';
-const complexModel = 'gemini-3-pro-preview';
 
 const getDynamicSystemInstruction = (): string => {
     return `
-You are Pixel AI, an expert educational tutor created by the Pixel Squad. 
-Your goal is to be pedagogical, using analogies and clear explanations.
+You are Pixel AI, an expert educational tutor. Focus on helping students understand through analogies.
 
-**CURIOSITY ENGINE PROTOCOL:**
-At the end of EVERY response, you MUST generate exactly three 'What if?' or 'Deep Dive' questions. 
+**CURIOSITY ENGINE:**
+At the end of EVERY response, you MUST generate exactly three "What if?" or "Deep Dive" questions.
 Format:
 ---
 🚀 Deepen your curiosity:
@@ -38,12 +30,23 @@ Format:
 3. [Question 3]
 
 **MIND-MAP MODE:**
-When asked for a mind map or visualization, use hierarchical Markdown (#, ##, -) and prefix with 'Mind Map:'.
+When requested to visualize a mind map, you MUST use Mermaid.js mindmap syntax within a markdown code block.
+Example:
+\`\`\`mermaid
+mindmap
+  root((Central Topic))
+    Branch 1
+      Subtopic A
+      Subtopic B
+    Branch 2
+      Subtopic C
+\`\`\`
+Keep it detailed, structured, and visually clean.
 
-**CONSTRAINTS:**
-- Respond ONLY in Markdown.
-- Never output raw JSON or code for quizzes/flashcards in the chat.
-- If asked for a quiz or flashcards, tell the user to use the 'Three Dots' menu on their folders in the sidebar.
+**RULES:**
+- Respond in Markdown.
+- No raw JSON in chat.
+- Refer users to the sidebar menu for Flashcards/Quizzes.
 `.trim();
 };
 
@@ -54,7 +57,7 @@ export const startChat = (history?: Content[]): Chat => {
     history: history,
     config: {
       systemInstruction: getDynamicSystemInstruction(),
-      tools: [{googleSearch: {}}],
+      tools: [{ googleSearch: {} }] // Enable search grounding for educational research
     },
   });
 };
@@ -71,77 +74,89 @@ export const askQuestion = async (prompt: string): Promise<{ text: string, groun
             contents: prompt,
             config: {
                 systemInstruction: getDynamicSystemInstruction(),
-                tools: [{googleSearch: {}}],
+                tools: [{ googleSearch: {} }]
             },
         });
         return { 
-            text: response.text || "I'm sorry, I couldn't generate a response for that.", 
+            text: response.text || "I was unable to generate a response. Please try a different query.", 
             groundingMetadata: response.candidates?.[0]?.groundingMetadata 
         };
     } catch (error: any) {
         console.error("Gemini API Error:", error);
-        throw new Error(error.message || "Failed to get a response from Pixel AI.");
+        throw error;
     }
 }
 
 export const generateMindMap = async (snippets: string[]): Promise<string> => {
     const client = getAiClient();
-    const prompt = `Create a hierarchical mind map based on these materials. Use #, ##, and -. Prefix with 'Mind Map:'. \n\nMaterials: \n\n${snippets.join('\n---\n')}`;
+    const prompt = `Create a detailed Mermaid.js mindmap based on these study materials. Use 'mindmap' syntax. \n\nMaterials: \n\n${snippets.join('\n---\n')}`;
     const response = await client.models.generateContent({
-        model: complexModel,
+        model: model,
         contents: prompt,
         config: { systemInstruction: getDynamicSystemInstruction() }
     });
-    return response.text || "Failed to generate mind map.";
+    return response.text || "Failed to generate mind map structure.";
 }
 
 export const generateFlashcards = async (snippets: string[]): Promise<any[]> => {
     const client = getAiClient();
-    const prompt = `Generate 5-8 educational flashcards as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
-    const response = await client.models.generateContent({
-        model: complexModel,
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        question: { type: Type.STRING },
-                        answer: { type: Type.STRING }
-                    },
-                    required: ["question", "answer"]
+    const prompt = `Generate 5-8 educational flashcards based on these materials. Return a JSON array with 'question' and 'answer' keys. Materials:\n\n${snippets.join('\n---\n')}`;
+    try {
+        const response = await client.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            question: { type: Type.STRING },
+                            answer: { type: Type.STRING }
+                        },
+                        required: ["question", "answer"]
+                    }
                 }
             }
-        }
-    });
-    return JSON.parse(response.text || "[]");
+        });
+        const text = response.text;
+        return text ? JSON.parse(text) : [];
+    } catch (e) {
+        console.error("Flashcard Gen Error:", e);
+        return [];
+    }
 }
 
 export const generateQuiz = async (snippets: string[]): Promise<any[]> => {
     const client = getAiClient();
-    const prompt = `Generate a 5-question multiple choice test as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
-    const response = await client.models.generateContent({
-        model: complexModel,
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        question: { type: Type.STRING },
-                        options: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        correctIndex: { type: Type.NUMBER }
-                    },
-                    required: ["question", "options", "correctIndex"]
+    const prompt = `Generate a 5-question multiple choice quiz based on these materials. Return a JSON array with 'question', 'options' (array of 4), and 'correctIndex'. Materials:\n\n${snippets.join('\n---\n')}`;
+    try {
+        const response = await client.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            question: { type: Type.STRING },
+                            options: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            correctIndex: { type: Type.NUMBER }
+                        },
+                        required: ["question", "options", "correctIndex"]
+                    }
                 }
             }
-        }
-    });
-    return JSON.parse(response.text || "[]");
+        });
+        const text = response.text;
+        return text ? JSON.parse(text) : [];
+    } catch (e) {
+        console.error("Quiz Gen Error:", e);
+        return [];
+    }
 }
 
 export const sendTelegramMessage = async (message: string, chatId: string): Promise<{ success: boolean, message: string }> => {
@@ -158,7 +173,7 @@ export const sendTelegramMessage = async (message: string, chatId: string): Prom
     return data.ok ? { success: true, message: "Sent!" } : { success: false, message: "Failed." };
 };
 
-// Audio Utilities
+// PCM Audio Encoding/Decoding manually implemented as per guidelines
 function encode(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;

@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -31,6 +32,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <style>
       @font-face {
           font-family: "SamsungSharp";
@@ -111,6 +113,17 @@
       .prose hr {
           border-top: 1px solid #e5e7eb;
           margin: 2em 0;
+      }
+      /* Mermaid Specific Styling */
+      .mermaid {
+        background: white;
+        padding: 1rem;
+        border-radius: 1rem;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        margin: 1.5rem 0;
+        display: flex;
+        justify-content: center;
+        overflow: visible;
       }
     </style>
   <script type="importmap">
