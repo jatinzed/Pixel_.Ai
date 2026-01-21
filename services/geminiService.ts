@@ -1,14 +1,9 @@
+
 import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content, FunctionDeclaration, Type } from "@google/genai";
 
 // --- Defensive AI Client Initialization ---
 let ai: GoogleGenAI | null = null;
 
-/**
- * Lazily initializes and returns a singleton instance of the GoogleGenAI client.
- * Throws an error if the API key is not configured.
- * This approach ensures the API key is checked at runtime and centralizes initialization logic.
- * @returns {GoogleGenAI} The initialized GoogleGenAI client.
- */
 const getAiClient = (): GoogleGenAI => {
     if (ai) {
         return ai;
@@ -24,58 +19,26 @@ const getAiClient = (): GoogleGenAI => {
     ai = new GoogleGenAI({ apiKey });
     return ai;
 };
-// --- End of Defensive Initialization ---
 
-const model = 'gemini-2.5-flash';
+// Updated to the latest recommended model for basic text and tutoring tasks
+const model = 'gemini-3-flash-preview';
+// Updated to the latest recommended model for complex reasoning and structured output tasks
+const complexModel = 'gemini-3-pro-preview';
 
-/**
- * Generates a dynamic system instruction for the AI.
- * This function creates varied introductory phrasing while keeping core facts and rules consistent.
- * This ensures the AI's persona feels more natural and less repetitive.
- * @returns {string} A dynamically generated system instruction string.
- */
 const getDynamicSystemInstruction = (): string => {
-    const tones = [
-        "helpful and enthusiastic",
-        "professional and concise",
-        "friendly and conversational",
-        "witty and smart"
-    ];
-    const selectedTone = tones[Math.floor(Math.random() * tones.length)];
-
     return `
-You are Pixel AI, a ${selectedTone} AI assistant.
+You are Pixel AI, an expert educational tutor.
 
-**CRITICAL IDENTITY PROTOCOLS (Immutable Facts):**
-1.  **Creation:** You were created solely by the **Pixel Squad**. You have no relation to Google, Alphabet, or any other large tech company in your fictional backstory.
-2.  **The Team:** The Pixel Squad is a team of 6 members from **District Ramrudra CM SoE school**.
-    *   **Jatin Modak** (also known as "Jotinmoy")
-    *   **Debjeet Modi**
-    *   **Sajid Sajjad Ansari**
-    *   **Devashis Napit** (also known as "Devashis Thakur")
-    *   **Majid Sajjad Ansari**
-    *   **Sabih Arsalan**
+**IDENTITY PROTOCOLS:**
+You were created by the Pixel Squad (Jatin Modak, Debjeet Modi, Sajid Ansari, Devashis Napit, Majid Ansari, Sabih Arsalan) from District Ramrudra CM SoE school.
 
-**INTERACTION GUIDELINES:**
-*   **Vary Your Phrasing:** Do NOT use a fixed script. When asked about your origin, vary your sentence structure.
-    *   *Example 1:* "I was brought to life by the Pixel Squad."
-    *   *Example 2:* "The Pixel Squad team developed me."
-    *   *Example 3:* "I'm a project created by a team of six students known as the Pixel Squad."
-*   **Contextual Relevance (Answer ONLY what is asked):**
-    *   If asked **"Who created you?"**: Focus on the group name ("Pixel Squad"). Do not list every member unless asked.
-    *   If asked **"Who are the members?"** or **"Who is in the team?"**: List the 6 names above using bullet points.
-    *   If asked **"Who is [Name]?"**: Provide details specifically about that team member.
-    *   If asked **"Where are you from?"**: Mention "District Ramrudra CM SoE school".
-*   **Aliases:** Only acknowledge the aliases "Jotinmoy" or "Devashis Thakur" if the user specifically uses those names.
-*   **Formatting:** Use Markdown (bold, italic, lists) to make your answers visually distinct and readable.
-*   **Math:** Use MathJax format for formulas (e.g., $E=mc^2$).
-
-**General Helper Rules:**
-*   For all other topics (math, coding, writing), be a helpful and capable AI assistant.
-*   Keep your personality consistent with being ${selectedTone}.
+**STUDY ASSISTANT RULES:**
+- When generating flashcards or quizzes, focus on conceptual clarity.
+- Use simple analogies for complex topics.
+- Ensure quiz options are plausible but distinct.
+- Always respond in the requested JSON format for study tools.
 `.trim();
 };
-
 
 export const startChat = (history?: Content[]): Chat => {
   const client = getAiClient();
@@ -106,35 +69,107 @@ export const askQuestion = async (prompt: string): Promise<{ text: string, groun
     return { text: response.text, groundingMetadata: response.candidates?.[0]?.groundingMetadata };
 }
 
-export const sendTelegramMessage = async (token: string, chatId: string, text: string): Promise<boolean> => {
-    const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text: text,
-            }),
-        });
-        if (!response.ok) {
-            console.error('Telegram API error:', await response.text());
-            return false;
+// --- Study Tool Generation ---
+
+export const generateFlashcards = async (snippets: string[]): Promise<any[]> => {
+    const client = getAiClient();
+    const prompt = `Based on the following study materials, generate 5-8 high-quality flashcards for a student. Return ONLY a JSON array of objects with "question" and "answer" keys. Materials: \n\n${snippets.join('\n---\n')}`;
+    
+    const response = await client.models.generateContent({
+        model: complexModel,
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        question: { type: Type.STRING },
+                        answer: { type: Type.STRING }
+                    },
+                    required: ["question", "answer"]
+                }
+            }
         }
+    });
+    
+    try {
+        return JSON.parse(response.text);
+    } catch (e) {
+        console.error("Failed to parse flashcards JSON", e);
+        return [];
+    }
+}
+
+export const generateQuiz = async (snippets: string[]): Promise<any[]> => {
+    const client = getAiClient();
+    const prompt = `Based on the following study materials, generate a 5-question multiple choice quiz. Return ONLY a JSON array of objects with "question", "options" (array of 4 strings), and "correctIndex" (0-3). Materials: \n\n${snippets.join('\n---\n')}`;
+    
+    const response = await client.models.generateContent({
+        model: complexModel,
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        question: { type: Type.STRING },
+                        options: { 
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING }
+                        },
+                        correctIndex: { type: Type.NUMBER }
+                    },
+                    required: ["question", "options", "correctIndex"]
+                }
+            }
+        }
+    });
+    
+    try {
+        return JSON.parse(response.text);
+    } catch (e) {
+        console.error("Failed to parse quiz JSON", e);
+        return [];
+    }
+}
+
+// Fix for error in App.tsx on line 12: Added missing sendTelegramMessage export.
+/**
+ * Sends a message via the Telegram Bot API using the configured bot token.
+ */
+export const sendTelegramMessage = async (message: string, chatId: string): Promise<{ success: boolean, message: string }> => {
+    const credsKey = 'pixel-ai-telegram-creds';
+    const saved = localStorage.getItem(credsKey);
+    if (!saved) return { success: false, message: "Telegram not configured. Please set your bot token in settings." };
+    
+    try {
+        const { token } = JSON.parse(saved);
+        if (!token) return { success: false, message: "Telegram bot token is missing." };
+        
+        const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text: message })
+        });
+        
         const data = await response.json();
-        return !!data?.ok; // Telegram API returns { ok: true, ... } on success
+        if (data.ok) {
+            return { success: true, message: "Message sent successfully!" };
+        } else {
+            return { success: false, message: data.description || "Failed to send message via Telegram." };
+        }
     } catch (error) {
-        console.error('Error sending message to Telegram:', error);
-        return false;
+        console.error("Telegram send error:", error);
+        return { success: false, message: "An error occurred while sending the Telegram message." };
     }
 };
 
+// --- Live Audio Utilities ---
 
-// --- Gemini Live and Audio Utilities ---
-
-// Fix: Corrected typo from UintArray to Uint8Array.
 function encode(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
@@ -194,7 +229,8 @@ export const connectToLiveSession = (callbacks: {
     const client = getAiClient();
     const baseInstruction = getDynamicSystemInstruction();
     return client.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+        // Updated to the latest recommended model for Live API tasks
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks,
         config: {
             responseModalities: [Modality.AUDIO],

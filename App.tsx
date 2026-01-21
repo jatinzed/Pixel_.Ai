@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
@@ -5,9 +6,12 @@ import RoomView from './components/RoomView';
 import NotepadModal from './components/NotepadModal';
 import RoomModal from './components/RoomModal';
 import TelegramModal from './components/TelegramModal';
+import TopicSelectorModal from './components/TopicSelectorModal';
+import StudyToolModal from './components/StudyToolModal';
 import { MenuIcon } from './components/Icons';
-import { Conversation, Message, Room, RoomMessage, TelegramCredentials, TelegramRecipient, Note } from './types';
-import { startChat, sendMessageStream, askQuestion, sendTelegramMessage } from './services/geminiService';
+import { Conversation, Message, Room, RoomMessage, TelegramCredentials, TelegramRecipient, Note, TopicFolder, SavedSnippet } from './types';
+// Fixed error on line 12 by ensuring sendTelegramMessage is correctly exported from geminiService
+import { startChat, sendMessageStream, askQuestion, sendTelegramMessage, generateFlashcards, generateQuiz } from './services/geminiService';
 import { 
     login, 
     createRoom, 
@@ -22,15 +26,14 @@ import {
 const USER_ID_KEY = 'pixel-ai-user-id';
 const CONVERSATIONS_KEY_PREFIX = 'pixel-ai-conversations-';
 const NOTEPAD_KEY_PREFIX = 'pixel-ai-notepad-';
+const FOLDERS_KEY_PREFIX = 'pixel-ai-folders-';
 const TELEGRAM_CREDS_KEY = 'pixel-ai-telegram-creds';
 
 const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   
-  // Rooms state (Metadata only)
   const [rooms, setRooms] = useState<Room[]>([]);
-  // Active Room Messages (Real-time data)
   const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([]);
 
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -40,8 +43,16 @@ const App: React.FC = () => {
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
   
+  // Topic Selector Logic
+  const [isTopicSelectorOpen, setIsTopicSelectorOpen] = useState(false);
+  const [contentToSave, setContentToSave] = useState<string | null>(null);
+
+  // Study Tools Logic
+  const [studyToolState, setStudyToolState] = useState<{ type: 'flashcards' | 'quiz', data: any[], folderName: string } | null>(null);
+
   const [userId, setUserId] = useState<string>('');
   const [notes, setNotes] = useState<Note[]>([]);
+  const [folders, setFolders] = useState<TopicFolder[]>([]);
   
   const [telegramCredentials, setTelegramCredentials] = useState<TelegramCredentials | null>(null);
   const [initializationError, setInitializationError] = useState<string | null>(null);
@@ -51,12 +62,9 @@ const App: React.FC = () => {
     const initAuth = async () => {
         try {
             const user = await login();
-            console.log("Logged in to Firebase as:", user.uid);
             setUserId(user.uid);
-            // We use the Firebase UID as the user ID for consistency
         } catch (error) {
             console.error("Firebase Auth failed", error);
-            // Fallback to local ID if firebase fails entirely
             let localId = localStorage.getItem(USER_ID_KEY);
             if (!localId) {
                 localId = `user_${crypto.randomUUID().substring(0, 8)}`;
@@ -68,7 +76,7 @@ const App: React.FC = () => {
     initAuth();
   }, []);
 
-  // 2. Listen to User's Rooms (Sidebar List)
+  // 2. Listen to User's Rooms
   useEffect(() => {
     if (!userId) return;
     try {
@@ -81,13 +89,13 @@ const App: React.FC = () => {
     }
   }, [userId]);
 
-  // 3. Listen to Active Room Messages (Subcollection)
+  // 3. Listen to Active Room Messages
   useEffect(() => {
       if (!activeRoomId) {
           setRoomMessages([]);
           return;
       }
-      setIsLoading(true); // Show loader while fetching
+      setIsLoading(true);
       const unsubscribe = listenToMessages(activeRoomId, (msgs) => {
           setRoomMessages(msgs);
           setIsLoading(false);
@@ -114,101 +122,46 @@ const App: React.FC = () => {
     }
   }, [initializationError]);
 
-  // Load conversations
+  // Load/Save Data
   useEffect(() => {
       if (!userId) return;
-      const key = `${CONVERSATIONS_KEY_PREFIX}${userId}`;
-      const saved = localStorage.getItem(key);
-      try {
-          if (saved) {
-              const savedConversations: Omit<Conversation, 'chatSession'>[] = JSON.parse(saved);
-              if (savedConversations.length > 0) {
-                  const rehydrated = savedConversations.map(c => ({
-                      ...c,
-                      chatSession: startChat(c.messages.map(msg => ({
-                          role: msg.role,
-                          parts: [{ text: msg.content }],
-                      }))),
-                  }));
-                  setConversations(rehydrated);
-                  setActiveConversationId(rehydrated[0]?.id || null);
-              } else { handleNewChat(); }
-          } else { handleNewChat(); }
-      } catch (e) { 
-          if (e instanceof Error && e.message.includes("API key")) {
-             setInitializationError(e.message);
-          } else {
-             localStorage.removeItem(key); 
-             handleNewChat(); 
-          }
+      
+      const convosKey = `${CONVERSATIONS_KEY_PREFIX}${userId}`;
+      const savedConvos = localStorage.getItem(convosKey);
+      if (savedConvos) {
+          try {
+              const parsed: Omit<Conversation, 'chatSession'>[] = JSON.parse(savedConvos);
+              const rehydrated = parsed.map(c => ({
+                  ...c,
+                  chatSession: startChat(c.messages.map(msg => ({
+                      role: msg.role,
+                      parts: [{ text: msg.content }],
+                  }))),
+              }));
+              setConversations(rehydrated);
+              setActiveConversationId(rehydrated[0]?.id || null);
+          } catch (e) { handleNewChat(); }
+      } else { handleNewChat(); }
+
+      const foldersKey = `${FOLDERS_KEY_PREFIX}${userId}`;
+      const savedFolders = localStorage.getItem(foldersKey);
+      if (savedFolders) {
+          try { setFolders(JSON.parse(savedFolders)); } catch (e) {}
+      }
+
+      // Load Telegram Credentials from storage
+      const savedTelegram = localStorage.getItem(TELEGRAM_CREDS_KEY);
+      if (savedTelegram) {
+          try { setTelegramCredentials(JSON.parse(savedTelegram)); } catch (e) {}
       }
   }, [userId, handleNewChat]);
 
-  // Save conversations
   useEffect(() => {
-      if (!userId || conversations.length === 0) return;
-      const toSave = conversations.filter(c => c.messages.length > 0).map(({ chatSession, ...rest }) => rest);
-      if (toSave.length > 0) {
-          localStorage.setItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`, JSON.stringify(toSave));
-      } else {
-          localStorage.removeItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`);
-      }
-  }, [conversations, userId]);
-  
-  // Load/Save Notes
-  useEffect(() => {
-    if (!userId) return;
-    const key = `${NOTEPAD_KEY_PREFIX}${userId}`;
-    const savedContent = localStorage.getItem(key);
-    if (savedContent) {
-        try {
-            const parsed = JSON.parse(savedContent);
-            if (Array.isArray(parsed)) setNotes(parsed);
-        } catch (e) {
-            if (savedContent.trim().length > 0) {
-                setNotes([{ id: Date.now().toString(), title: 'My Notes', content: savedContent, updatedAt: Date.now() }]);
-            }
-        }
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    if (!userId) return;
-    localStorage.setItem(`${NOTEPAD_KEY_PREFIX}${userId}`, JSON.stringify(notes));
-  }, [notes, userId]);
-  
-  // Load Telegram Creds
-  useEffect(() => {
-    const savedCreds = localStorage.getItem(TELEGRAM_CREDS_KEY);
-    if (savedCreds) {
-        try { setTelegramCredentials(JSON.parse(savedCreds)); } catch (e) {}
-    }
-  }, []);
-
-  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const handleOpenNotepad = () => setIsNotepadOpen(true);
-  const handleCloseNotepad = () => setIsNotepadOpen(false);
-  const handleOpenRoomModal = () => setIsRoomModalOpen(true);
-  const handleCloseRoomModal = () => setIsRoomModalOpen(false);
-  const handleOpenTelegramModal = () => setIsTelegramModalOpen(true);
-  const handleCloseTelegramModal = () => setIsTelegramModalOpen(false);
-  
-  const handleSaveTelegramCredentials = (token: string, recipients: TelegramRecipient[]) => {
-      const creds = { token, recipients };
-      setTelegramCredentials(creds);
-      localStorage.setItem(TELEGRAM_CREDS_KEY, JSON.stringify(creds));
-  };
-  
-  const sendTelegram = useCallback(async (text: string, chatId: string): Promise<{success: boolean, message: string}> => {
-        if (!telegramCredentials?.token) {
-            handleOpenTelegramModal();
-            return {success: false, message: 'Telegram Bot Token not configured.'};
-        }
-        const success = await sendTelegramMessage(telegramCredentials.token, chatId, text);
-        return success 
-            ? {success: true, message: 'Message sent.'} 
-            : {success: false, message: 'Failed to send.'};
-    }, [telegramCredentials]);
+      if (!userId) return;
+      const toSaveConvos = conversations.filter(c => c.messages.length > 0).map(({ chatSession, ...rest }) => rest);
+      localStorage.setItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`, JSON.stringify(toSaveConvos));
+      localStorage.setItem(`${FOLDERS_KEY_PREFIX}${userId}`, JSON.stringify(folders));
+  }, [conversations, folders, userId]);
 
   const handleSelectConversation = (id: string) => {
     setActiveRoomId(null);
@@ -264,6 +217,65 @@ const App: React.FC = () => {
     }
   };
 
+  const handleExplainWithAnalogy = (content: string) => {
+      const prompt = `I don't quite understand this concept yet. Could you explain this content using a simple, relatable analogy and concrete examples? Content to explain: \n\n${content}`;
+      handleSendMessage(prompt);
+  };
+
+  const handleStartSaveToTopic = (content: string) => {
+      setContentToSave(content);
+      setIsTopicSelectorOpen(true);
+  };
+
+  const onSaveToTopic = (folderId: string) => {
+      if (!contentToSave) return;
+      const snippet: SavedSnippet = { id: Date.now().toString(), content: contentToSave, timestamp: Date.now() };
+      setFolders(prev => prev.map(f => f.id === folderId ? { ...f, snippets: [snippet, ...f.snippets], updatedAt: Date.now() } : f));
+      setIsTopicSelectorOpen(false);
+      setContentToSave(null);
+  };
+
+  const onCreateAndSave = (name: string) => {
+      if (!contentToSave) return;
+      const newFolder: TopicFolder = {
+          id: Date.now().toString(),
+          name,
+          snippets: [{ id: Date.now().toString(), content: contentToSave, timestamp: Date.now() }],
+          updatedAt: Date.now()
+      };
+      setFolders(prev => [newFolder, ...prev]);
+      setIsTopicSelectorOpen(false);
+      setContentToSave(null);
+  };
+
+  const onGenerateFlashcardsAction = async (folderId: string) => {
+      const folder = folders.find(f => f.id === folderId);
+      if (!folder || folder.snippets.length === 0) return;
+      setIsLoading(true);
+      try {
+          const cards = await generateFlashcards(folder.snippets.map(s => s.content));
+          setStudyToolState({ type: 'flashcards', data: cards, folderName: folder.name });
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
+  const onGenerateQuizAction = async (folderId: string) => {
+      const folder = folders.find(f => f.id === folderId);
+      if (!folder || folder.snippets.length === 0) return;
+      setIsLoading(true);
+      try {
+          const quiz = await generateQuiz(folder.snippets.map(s => s.content));
+          setStudyToolState({ type: 'quiz', data: quiz, folderName: folder.name });
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
   const handleSendRoomMessage = async (text: string) => {
       if (!activeRoomId) return;
       await sendFirebaseRoomMessage(activeRoomId, { senderId: userId, text });
@@ -271,28 +283,16 @@ const App: React.FC = () => {
   
   const handleAskAiInRoom = async (text: string) => {
       if (!activeRoomId) return;
-      // Optimistic update handled by listener, but we show loading
       await sendFirebaseRoomMessage(activeRoomId, { senderId: userId, text: `/ask ${text}` });
-
       try {
         const { text: responseText, groundingMetadata } = await askQuestion(text);
-        await sendFirebaseRoomMessage(activeRoomId, {
-            senderId: 'PixelBot',
-            text: responseText,
-            groundingMetadata: groundingMetadata
-        });
+        await sendFirebaseRoomMessage(activeRoomId, { senderId: 'PixelBot', text: responseText, groundingMetadata: groundingMetadata });
       } catch (error) {
          await sendFirebaseRoomMessage(activeRoomId, { senderId: 'PixelBot', text: "Sorry, I couldn't answer that question." });
       }
   };
 
-  const handleToggleReaction = async (messageId: string, emoji: string) => {
-    if (!activeRoomId) return;
-    await toggleFirebaseReaction(activeRoomId, messageId, emoji, userId);
-  };
-
   const activeConversation = conversations.find(c => c.id === activeConversationId);
-  // Construct the active room object by combining metadata + real-time messages
   const activeRoomMetadata = rooms.find(r => r.id === activeRoomId);
   const activeRoom: Room | undefined = activeRoomMetadata ? { ...activeRoomMetadata, messages: roomMessages } : undefined;
 
@@ -304,20 +304,23 @@ const App: React.FC = () => {
           <Sidebar
             conversations={conversations}
             rooms={rooms}
+            folders={folders}
             activeConversationId={activeConversationId}
             activeRoomId={activeRoomId}
-            onToggle={toggleSidebar}
+            onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
             onNewChat={handleNewChat}
             onSelectConversation={handleSelectConversation}
             onSelectRoom={handleSelectRoom}
-            onOpenNotepad={handleOpenNotepad}
-            onOpenRoomModal={handleOpenRoomModal}
-            onOpenTelegramModal={handleOpenTelegramModal}
+            onOpenNotepad={() => setIsNotepadOpen(true)}
+            onOpenRoomModal={() => setIsRoomModalOpen(true)}
+            onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
+            onGenerateFlashcards={onGenerateFlashcardsAction}
+            onGenerateQuiz={onGenerateQuizAction}
           />
         </div>
 
         {!isSidebarOpen && (
-          <button onClick={toggleSidebar} className="absolute top-5 left-4 z-10 p-1.5 text-gray-500 hover:bg-gray-100 rounded-md">
+          <button onClick={() => setIsSidebarOpen(true)} className="absolute top-5 left-4 z-10 p-1.5 text-gray-500 hover:bg-gray-100 rounded-md">
             <MenuIcon className="w-5 h-5" />
           </button>
         )}
@@ -328,10 +331,12 @@ const App: React.FC = () => {
               key={activeConversation.id}
               conversation={activeConversation}
               onSendMessage={handleSendMessage}
+              onExplainAnalogy={handleExplainWithAnalogy}
+              onSaveToTopic={handleStartSaveToTopic}
               isLoading={isLoading}
               isSidebarOpen={isSidebarOpen}
               telegramCredentials={telegramCredentials}
-              onSendTelegram={sendTelegram}
+              onSendTelegram={sendTelegramMessage}
             />
           )}
           {activeRoom && (
@@ -341,7 +346,9 @@ const App: React.FC = () => {
               currentUserId={userId}
               onSendMessage={handleSendRoomMessage}
               onAskAi={handleAskAiInRoom}
-              onToggleReaction={handleToggleReaction}
+              onExplainAnalogy={handleExplainWithAnalogy}
+              onSaveToTopic={handleStartSaveToTopic}
+              onToggleReaction={toggleFirebaseReaction}
               isLoading={isLoading}
               isSidebarOpen={isSidebarOpen}
             />
@@ -353,9 +360,29 @@ const App: React.FC = () => {
              </div>
           )}
         </main>
-      <NotepadModal isOpen={isNotepadOpen} onClose={handleCloseNotepad} notes={notes} onUpdateNotes={setNotes} />
-      <RoomModal isOpen={isRoomModalOpen} onClose={handleCloseRoomModal} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />
-      <TelegramModal isOpen={isTelegramModalOpen} onClose={handleCloseTelegramModal} onSave={handleSaveTelegramCredentials} initialToken={telegramCredentials?.token} initialRecipients={telegramCredentials?.recipients} />
+      <NotepadModal isOpen={isNotepadOpen} onClose={() => setIsNotepadOpen(false)} notes={notes} onUpdateNotes={setNotes} folders={folders} onUpdateFolders={setFolders} />
+      <RoomModal isOpen={isRoomModalOpen} onClose={() => setIsRoomModalOpen(false)} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />
+      <TelegramModal 
+        isOpen={isTelegramModalOpen} 
+        onClose={() => setIsTelegramModalOpen(false)} 
+        onSave={(token, recipients) => {
+            const creds = { token, recipients };
+            setTelegramCredentials(creds);
+            localStorage.setItem(TELEGRAM_CREDS_KEY, JSON.stringify(creds));
+        }} 
+        initialToken={telegramCredentials?.token}
+        initialRecipients={telegramCredentials?.recipients}
+      />
+      <TopicSelectorModal isOpen={isTopicSelectorOpen} onClose={() => setIsTopicSelectorOpen(false)} folders={folders} onSaveToTopic={onSaveToTopic} onCreateAndSave={onCreateAndSave} />
+      
+      {studyToolState && (
+          <StudyToolModal 
+            type={studyToolState.type}
+            data={studyToolState.data}
+            folderName={studyToolState.folderName}
+            onClose={() => setStudyToolState(null)}
+          />
+      )}
     </div>
   );
 };

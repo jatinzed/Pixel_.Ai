@@ -1,13 +1,25 @@
-
-import React from 'react';
-import { PlusIcon, ImageIcon, MessageIcon, ChevronDoubleLeftIcon, HashtagIcon, PlusCircleIcon, PaperAirplaneIcon } from './Icons';
-import { Conversation, Room } from '../types';
+import React, { useState } from 'react';
+import { 
+    PlusIcon, 
+    ImageIcon, 
+    MessageIcon, 
+    ChevronDoubleLeftIcon, 
+    HashtagIcon, 
+    PlusCircleIcon, 
+    PaperAirplaneIcon,
+    DotsHorizontalIcon,
+    FolderPlusIcon,
+    LibraryIcon,
+    LightbulbIcon
+} from './Icons';
+import { Conversation, Room, TopicFolder } from '../types';
 
 interface SidebarProps {
     onToggle: () => void;
     onNewChat: () => void;
     conversations: Conversation[];
     rooms: Room[];
+    folders: TopicFolder[];
     activeConversationId: string | null;
     activeRoomId: string | null;
     onSelectConversation: (id: string) => void;
@@ -15,6 +27,8 @@ interface SidebarProps {
     onOpenNotepad: () => void;
     onOpenRoomModal: () => void;
     onOpenTelegramModal: () => void;
+    onGenerateFlashcards: (folderId: string) => void;
+    onGenerateQuiz: (folderId: string) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -22,6 +36,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     onNewChat,
     conversations,
     rooms,
+    folders,
     activeConversationId,
     activeRoomId,
     onSelectConversation,
@@ -29,7 +44,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     onOpenNotepad,
     onOpenRoomModal,
     onOpenTelegramModal,
+    onGenerateFlashcards,
+    onGenerateQuiz
 }) => {
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
   return (
     <aside className="h-full bg-white flex flex-col border-r border-gray-100 overflow-hidden">
         <div className="p-4 flex flex-col h-full w-[280px]">
@@ -46,75 +65,134 @@ const Sidebar: React.FC<SidebarProps> = ({
             <div className="mb-6 flex items-center space-x-2">
                 <button 
                     onClick={onNewChat}
-                    className="flex-1 bg-[#6A5BFF] text-white flex items-center justify-center space-x-2 py-3 rounded-full font-semibold hover:bg-opacity-90 transition"
+                    className="flex-1 bg-[#6A5BFF] text-white flex items-center justify-center space-x-2 py-3 rounded-full font-semibold hover:bg-opacity-90 transition shadow-lg shadow-indigo-100"
                 >
                     <PlusIcon className="w-5 h-5" />
                     <span>New chat</span>
                 </button>
                 <button 
                   onClick={onOpenNotepad}
-                  className="p-3 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
-                    <ImageIcon className="w-6 h-6" />
+                  className="p-3 bg-gray-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition border border-indigo-50">
+                    <LibraryIcon className="w-6 h-6" />
                 </button>
                 <button 
                   onClick={onOpenTelegramModal}
-                  className="p-3 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition">
+                  className="p-3 bg-gray-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition border border-indigo-50">
                     <PaperAirplaneIcon className="w-6 h-6" />
                 </button>
             </div>
             
             <div className="flex-1 overflow-y-auto -mr-4 pr-4">
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-3">Your Conversations</h2>
-                <ul className="space-y-1 mb-6">
+                {/* Conversations Section */}
+                <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 mb-3">Chats</h2>
+                <ul className="space-y-1 mb-8">
                     {conversations.map((convo) => (
                         <li 
                             key={convo.id}
                             onClick={() => onSelectConversation(convo.id)}
                             className={`flex items-center justify-between p-2 px-4 rounded-full cursor-pointer transition-colors ${
                                 activeConversationId === convo.id 
-                                    ? 'bg-blue-100/50' 
-                                    : 'hover:bg-gray-100'
+                                    ? 'bg-indigo-50 text-indigo-700' 
+                                    : 'text-gray-600 hover:bg-gray-50'
                             }`}
                         >
                             <div className="flex items-center space-x-3 truncate">
-                                <MessageIcon className="w-5 h-5 text-gray-600 flex-shrink-0" />
-                                <span className="text-sm font-medium text-gray-800 truncate">{convo.title}</span>
+                                <MessageIcon className={`w-4 h-4 flex-shrink-0 ${activeConversationId === convo.id ? 'text-indigo-600' : 'text-gray-400'}`} />
+                                <span className="text-sm font-bold truncate">{convo.title}</span>
                             </div>
-                            {activeConversationId === convo.id && (
-                                <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
-                            )}
                         </li>
                     ))}
                 </ul>
 
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-3">Chat Rooms</h2>
-                 <div className="flex flex-col space-y-2 mb-4">
-                    <button onClick={onOpenRoomModal} className="w-full text-sm font-medium text-gray-600 hover:bg-gray-100 py-2 px-3 rounded-lg flex items-center space-x-2 transition-colors">
-                        <PlusCircleIcon className="w-5 h-5 text-indigo-500"/>
-                        <span>Create or Join Room</span>
-                    </button>
-                </div>
-                <ul className="space-y-1">
-                     {rooms.map((room) => (
+                {/* Study Topics Section */}
+                <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 mb-3">Study Topics</h2>
+                <ul className="space-y-1 mb-8">
+                    {folders.map((folder) => (
                         <li 
-                            key={room.id}
-                            onClick={() => onSelectRoom(room.id)}
-                            className={`flex items-center justify-between p-2 px-4 rounded-full cursor-pointer transition-colors ${
-                                activeRoomId === room.id 
-                                    ? 'bg-blue-100/50' 
-                                    : 'hover:bg-gray-100'
-                            }`}
+                            key={folder.id}
+                            className="group relative flex items-center justify-between p-2 px-4 rounded-full text-gray-600 hover:bg-indigo-50 transition-colors"
                         >
-                            <div className="flex items-center space-x-3 truncate">
-                                <HashtagIcon className="w-5 h-5 text-gray-600 flex-shrink-0" />
-                                <span className="text-sm font-medium text-gray-800 truncate">{room.name}</span>
+                            <div 
+                                onClick={onOpenNotepad}
+                                className="flex items-center space-x-3 truncate cursor-pointer flex-1"
+                            >
+                                <FolderPlusIcon className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                                <span className="text-sm font-bold truncate">{folder.name}</span>
                             </div>
-                            {activeRoomId === room.id && (
-                                <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
-                            )}
+                            
+                            {/* Three Dots Menu */}
+                            <div className="relative">
+                                <button 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setOpenMenuId(openMenuId === folder.id ? null : folder.id);
+                                    }}
+                                    className="p-1 rounded-full hover:bg-indigo-100 text-gray-400 group-hover:text-indigo-600 transition-colors"
+                                >
+                                    <DotsHorizontalIcon className="w-4 h-4" />
+                                </button>
+
+                                {openMenuId === folder.id && (
+                                    <>
+                                        <div 
+                                            className="fixed inset-0 z-10" 
+                                            onClick={() => setOpenMenuId(null)}
+                                        />
+                                        <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-20 overflow-hidden">
+                                            <button 
+                                                onClick={() => {
+                                                    onGenerateFlashcards(folder.id);
+                                                    setOpenMenuId(null);
+                                                }}
+                                                className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2"
+                                            >
+                                                <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                                Create Flashcards
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    onGenerateQuiz(folder.id);
+                                                    setOpenMenuId(null);
+                                                }}
+                                                className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2"
+                                            >
+                                                <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                                                Create Quiz
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         </li>
                     ))}
                 </ul>
+
+                {/* Rooms Section */}
+                <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 mb-3">Chat Rooms</h2>
+                 <div className="flex flex-col space-y-1 mb-4">
+                    <button onClick={onOpenRoomModal} className="w-full text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 py-2.5 px-4 rounded-full flex items-center space-x-2 transition-all">
+                        <PlusCircleIcon className="w-4 h-4"/>
+                        <span>New Room</span>
+                    </button>
+                    <ul className="space-y-1 mt-2">
+                        {rooms.map((room) => (
+                            <li 
+                                key={room.id}
+                                onClick={() => onSelectRoom(room.id)}
+                                className={`flex items-center justify-between p-2 px-4 rounded-full cursor-pointer transition-colors ${
+                                    activeRoomId === room.id 
+                                        ? 'bg-indigo-50 text-indigo-700' 
+                                        : 'text-gray-600 hover:bg-gray-50'
+                                }`}
+                            >
+                                <div className="flex items-center space-x-3 truncate">
+                                    <HashtagIcon className={`w-4 h-4 flex-shrink-0 ${activeRoomId === room.id ? 'text-indigo-600' : 'text-gray-400'}`} />
+                                    <span className="text-sm font-bold truncate">{room.name}</span>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
             </div>
         </div>
     </aside>

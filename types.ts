@@ -59,7 +59,31 @@ export interface TelegramCredentials {
   recipients: TelegramRecipient[];
 }
 
-// Types for Notepad
+// Types for Student Study Center
+export interface SavedSnippet {
+  id: string;
+  content: string;
+  timestamp: number;
+}
+
+export interface TopicFolder {
+  id: string;
+  name: string;
+  snippets: SavedSnippet[];
+  updatedAt: number;
+}
+
+export interface Flashcard {
+  question: string;
+  answer: string;
+}
+
+export interface QuizQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
+}
+
 export interface Note {
   id: string;
   title: string;

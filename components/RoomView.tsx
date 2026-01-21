@@ -8,12 +8,14 @@ interface RoomViewProps {
   currentUserId: string;
   onSendMessage: (text: string) => void;
   onAskAi: (text: string) => void;
-  onToggleReaction: (messageId: string, emoji: string) => void;
+  onExplainAnalogy: (content: string) => void;
+  onSaveToTopic: (content: string) => void;
+  onToggleReaction: (roomId: string, messageId: string, emoji: string, userId: string) => void;
   isLoading: boolean;
   isSidebarOpen: boolean;
 }
 
-const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage, onAskAi, onToggleReaction, isLoading, isSidebarOpen }) => {
+const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage, onAskAi, onExplainAnalogy, onSaveToTopic, onToggleReaction, isLoading, isSidebarOpen }) => {
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -23,7 +25,7 @@ const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage,
 
     const handleSend = () => {
         const trimmedInput = input.trim();
-        if (!trimmedInput) return; // Allow sending even if isLoading for optimistic feel
+        if (!trimmedInput) return;
 
         if (trimmedInput.startsWith('/ask ')) {
             const question = trimmedInput.substring(5);
@@ -38,12 +40,12 @@ const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage,
         <div className="flex flex-col h-full">
             <header className={`py-4 border-b border-gray-200 flex items-center justify-between ${isSidebarOpen ? 'px-8' : 'pl-20 pr-8'}`}>
                 <div>
-                    <h2 className="text-lg font-semibold text-gray-800 truncate">{room.name}</h2>
-                    <p className="text-xs text-gray-500">Room Code: {room.id}</p>
+                    <h2 className="text-lg font-bold text-gray-800 truncate uppercase tracking-tight">{room.name}</h2>
+                    <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">STUDY ROOM: {room.id}</p>
                 </div>
-                <div className="flex items-center space-x-2 text-sm font-medium text-gray-600">
-                    <UsersIcon className="w-5 h-5"/>
-                    <span>{room.memberIds.length}</span>
+                <div className="flex items-center space-x-2 text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full uppercase tracking-wider">
+                    <UsersIcon className="w-4 h-4"/>
+                    <span>{room.memberIds.length} STUDENTS</span>
                 </div>
             </header>
 
@@ -54,7 +56,9 @@ const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage,
                             key={msg.id} 
                             message={msg} 
                             currentUserId={currentUserId} 
-                            onToggleReaction={onToggleReaction}
+                            onToggleReaction={(mid, e) => onToggleReaction(room.id, mid, e, currentUserId)}
+                            onExplainAnalogy={onExplainAnalogy}
+                            onSaveToTopic={onSaveToTopic}
                         />
                     ))}
                     <div ref={messagesEndRef} />
@@ -63,19 +67,19 @@ const RoomView: React.FC<RoomViewProps> = ({ room, currentUserId, onSendMessage,
 
             <div className="px-4 md:px-6 pb-4">
                 <div className="w-full max-w-3xl mx-auto">
-                    <div className="bg-white rounded-full shadow-md flex items-center p-2">
+                    <div className="bg-white rounded-full shadow-xl shadow-indigo-50 border border-gray-100 flex items-center p-2">
                         <input
                             type="text"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                            placeholder="Type a message or use /ask to query AI"
-                            className="flex-1 bg-transparent border-none text-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-0 px-4"
+                            placeholder="Message group or use /ask to query AI"
+                            className="flex-1 bg-transparent border-none text-sm text-gray-800 placeholder-gray-400 font-medium focus:outline-none focus:ring-0 px-4"
                         />
                         <button
                             onClick={handleSend}
                             disabled={!input.trim()}
-                            className="p-2.5 rounded-full bg-[#6A5BFF] text-white hover:bg-opacity-90 disabled:bg-gray-300 transition-colors"
+                            className="p-3 rounded-full bg-[#6A5BFF] text-white hover:bg-opacity-90 disabled:bg-gray-300 transition-all shadow-lg shadow-indigo-100"
                         >
                             <SendIcon className="w-5 h-5 transform rotate-90" />
                         </button>
