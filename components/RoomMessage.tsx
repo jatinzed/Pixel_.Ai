@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import type { RoomMessage } from '../types';
-import { UserAvatar, BotAvatar, FaceSmileIcon, LightbulbIcon, FolderPlusIcon } from './Icons';
+import { UserAvatar, BotAvatar, FaceSmileIcon } from './Icons';
 import MarkdownRenderer from './MarkdownRenderer';
 
 interface RoomMessageComponentProps {
     message: RoomMessage;
     currentUserId: string;
     onToggleReaction: (messageId: string, emoji: string) => void;
-    onExplainAnalogy?: (content: string) => void;
-    onSaveToTopic?: (content: string) => void;
 }
 
 const ReactionTally: React.FC<{ message: RoomMessage, currentUserId: string, onToggleReaction: (messageId: string, emoji: string) => void }> = ({ message, currentUserId, onToggleReaction }) => {
@@ -40,7 +38,7 @@ const ReactionTally: React.FC<{ message: RoomMessage, currentUserId: string, onT
     );
 };
 
-const RoomMessageComponent: React.FC<RoomMessageComponentProps> = ({ message, currentUserId, onToggleReaction, onExplainAnalogy, onSaveToTopic }) => {
+const RoomMessageComponent: React.FC<RoomMessageComponentProps> = ({ message, currentUserId, onToggleReaction }) => {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [showAllSources, setShowAllSources] = useState(false);
   const availableReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -76,6 +74,7 @@ const RoomMessageComponent: React.FC<RoomMessageComponentProps> = ({ message, cu
   );
 
   const messageBubbleClass = "py-3 px-5 rounded-3xl max-w-xl";
+  const reactionTallyContainerClass = isCurrentUser ? "justify-end" : "justify-start pl-12";
 
   if (isCurrentUser) {
     return (
@@ -89,7 +88,7 @@ const RoomMessageComponent: React.FC<RoomMessageComponentProps> = ({ message, cu
           </div>
           <UserAvatar className="w-8 h-8 flex-shrink-0" />
         </div>
-        <div className={`flex justify-end w-full max-w-xl pr-12`}>
+        <div className={`flex ${reactionTallyContainerClass} w-full max-w-xl pr-12`}>
             <ReactionTally message={message} currentUserId={currentUserId} onToggleReaction={onToggleReaction}/>
         </div>
       </div>
@@ -104,59 +103,40 @@ const RoomMessageComponent: React.FC<RoomMessageComponentProps> = ({ message, cu
         <div className="flex flex-col items-start">
             <div className="flex justify-start items-start gap-3 group w-full">
                 <BotAvatar className="w-8 h-8 flex-shrink-0" />
-                <div className="flex flex-col gap-2">
-                    <div className={`${messageBubbleClass} rounded-bl-lg bg-gray-100 text-gray-800`}>
-                        <p className="text-xs font-bold text-indigo-600 mb-1">Pixel AI</p>
-                        <MarkdownRenderer content={message.text} />
-                        {sources.length > 0 && (
-                            <div className="mt-4 pt-3 border-t border-gray-200">
-                                <h4 className="text-xs font-semibold text-gray-500 mb-2">Sources:</h4>
-                                <ul className="space-y-2">
-                                    {displayedSources.map((chunk, index) => (
-                                    chunk.web && (
-                                        <li key={index} className="text-xs">
-                                            <a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
-                                                <span className="bg-blue-100 text-blue-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded-full">{index + 1}</span>
-                                                <span className="truncate">{chunk.web.title || chunk.web.uri}</span>
-                                            </a>
-                                        </li>
-                                    )
-                                    ))}
-                                </ul>
-                                {sources.length > 2 && !showAllSources && (
-                                    <button
-                                        onClick={() => setShowAllSources(true)}
-                                        className="text-xs font-semibold text-blue-600 hover:underline mt-2"
-                                    >
-                                        Show {sources.length - 2} more
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                    {/* Student tools */}
-                    <div className="flex items-center gap-2 px-1">
-                        <button 
-                            onClick={() => onExplainAnalogy?.(message.text)}
-                            className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
-                            title="Explain with analogy"
-                        >
-                            <LightbulbIcon className="w-4 h-4" />
-                        </button>
-                        <button 
-                            onClick={() => onSaveToTopic?.(message.text)}
-                            className="p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
-                            title="Save to topic folder"
-                        >
-                            <FolderPlusIcon className="w-4 h-4" />
-                        </button>
-                    </div>
+                <div className={`${messageBubbleClass} rounded-bl-lg bg-gray-100 text-gray-800`}>
+                    <p className="text-xs font-bold text-indigo-600 mb-1">Pixel AI</p>
+                    <MarkdownRenderer content={message.text} />
+                     {sources.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-gray-200">
+                            <h4 className="text-xs font-semibold text-gray-500 mb-2">Sources:</h4>
+                            <ul className="space-y-2">
+                                {displayedSources.map((chunk, index) => (
+                                chunk.web && (
+                                    <li key={index} className="text-xs">
+                                        <a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
+                                            <span className="bg-blue-100 text-blue-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded-full">{index + 1}</span>
+                                            <span className="truncate">{chunk.web.title || chunk.web.uri}</span>
+                                        </a>
+                                    </li>
+                                )
+                                ))}
+                            </ul>
+                            {sources.length > 2 && !showAllSources && (
+                                <button
+                                    onClick={() => setShowAllSources(true)}
+                                    className="text-xs font-semibold text-blue-600 hover:underline mt-2"
+                                >
+                                    Show {sources.length - 2} more
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
                 <div className="self-center opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
                     {reactionButton}
                 </div>
             </div>
-            <div className={`flex justify-start pl-12 w-full max-w-xl`}>
+            <div className={`flex ${reactionTallyContainerClass} w-full max-w-xl`}>
                 <ReactionTally message={message} currentUserId={currentUserId} onToggleReaction={onToggleReaction}/>
             </div>
         </div>
@@ -176,7 +156,7 @@ const RoomMessageComponent: React.FC<RoomMessageComponentProps> = ({ message, cu
                 {reactionButton}
             </div>
         </div>
-        <div className={`flex justify-start pl-12 w-full max-w-xl`}>
+        <div className={`flex ${reactionTallyContainerClass} w-full max-w-xl`}>
             <ReactionTally message={message} currentUserId={currentUserId} onToggleReaction={onToggleReaction}/>
         </div>
     </div>
