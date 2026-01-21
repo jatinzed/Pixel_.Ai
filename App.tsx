@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
@@ -7,10 +6,9 @@ import NotepadModal from './components/NotepadModal';
 import RoomModal from './components/RoomModal';
 import TelegramModal from './components/TelegramModal';
 import TopicSelectorModal from './components/TopicSelectorModal';
-import StudyToolModal from './components/StudyToolModal';
 import { MenuIcon } from './components/Icons';
 import { Conversation, Message, Room, RoomMessage, TelegramCredentials, TelegramRecipient, Note, TopicFolder, SavedSnippet } from './types';
-import { startChat, sendMessageStream, askQuestion, sendTelegramMessage, generateFlashcards, generateQuiz, generateMindMap } from './services/geminiService';
+import { startChat, sendMessageStream, askQuestion, sendTelegramMessage } from './services/geminiService';
 import { 
     login, 
     createRoom, 
@@ -31,30 +29,36 @@ const TELEGRAM_CREDS_KEY = 'pixel-ai-telegram-creds';
 const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([]);
+
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isNotepadOpen, setIsNotepadOpen] = useState(false);
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
+  
+  // Topic Selector Logic
   const [isTopicSelectorOpen, setIsTopicSelectorOpen] = useState(false);
   const [contentToSave, setContentToSave] = useState<string | null>(null);
-  const [studyToolState, setStudyToolState] = useState<{ type: 'flashcards' | 'quiz', data: any[], folderName: string } | null>(null);
+
   const [userId, setUserId] = useState<string>('');
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<TopicFolder[]>([]);
+  
   const [telegramCredentials, setTelegramCredentials] = useState<TelegramCredentials | null>(null);
   const [initializationError, setInitializationError] = useState<string | null>(null);
 
+  // 1. Initialize Firebase Auth
   useEffect(() => {
     const initAuth = async () => {
         try {
             const user = await login();
             setUserId(user.uid);
         } catch (error) {
+            console.error("Firebase Auth failed", error);
             let localId = localStorage.getItem(USER_ID_KEY);
             if (!localId) {
                 localId = `user_${crypto.randomUUID().substring(0, 8)}`;
@@ -66,6 +70,7 @@ const App: React.FC = () => {
     initAuth();
   }, []);
 
+  // 2. Listen to User's Rooms
   useEffect(() => {
     if (!userId) return;
     try {
@@ -73,9 +78,12 @@ const App: React.FC = () => {
             setRooms(updatedRooms);
         });
         return () => unsubscribe();
-    } catch (e) {}
+    } catch (e) {
+        console.error("Firebase room listener failed", e);
+    }
   }, [userId]);
 
+  // 3. Listen to Active Room Messages
   useEffect(() => {
       if (!activeRoomId) {
           setRoomMessages([]);
@@ -103,12 +111,15 @@ const App: React.FC = () => {
         setConversations(prev => [newConversation, ...prev]);
         setActiveConversationId(newConversation.id);
     } catch (error) {
+        console.error("Initialization Error on new chat:", error);
         if (error instanceof Error) setInitializationError(error.message);
     }
   }, [initializationError]);
 
+  // Load/Save Data
   useEffect(() => {
       if (!userId) return;
+      
       const convosKey = `${CONVERSATIONS_KEY_PREFIX}${userId}`;
       const savedConvos = localStorage.getItem(convosKey);
       if (savedConvos) {
@@ -125,14 +136,11 @@ const App: React.FC = () => {
               setActiveConversationId(rehydrated[0]?.id || null);
           } catch (e) { handleNewChat(); }
       } else { handleNewChat(); }
+
       const foldersKey = `${FOLDERS_KEY_PREFIX}${userId}`;
       const savedFolders = localStorage.getItem(foldersKey);
       if (savedFolders) {
           try { setFolders(JSON.parse(savedFolders)); } catch (e) {}
-      }
-      const savedTelegram = localStorage.getItem(TELEGRAM_CREDS_KEY);
-      if (savedTelegram) {
-          try { setTelegramCredentials(JSON.parse(savedTelegram)); } catch (e) {}
       }
   }, [userId, handleNewChat]);
 
@@ -167,13 +175,18 @@ const App: React.FC = () => {
   const handleSendMessage = async (prompt: string) => {
     if (!activeConversationId) return;
     setIsLoading(true);
+
     const userMessage: Message = { id: Date.now().toString(), role: 'user', content: prompt };
     const modelMessage: Message = { id: (Date.now() + 1).toString(), role: 'model', content: '' };
+    
     setConversations(prev => prev.map(c => c.id === activeConversationId ? { ...c, messages: [...c.messages, userMessage, modelMessage] } : c));
+
     try {
       const chatSession = conversations.find(c => c.id === activeConversationId)?.chatSession;
       if (!chatSession) throw new Error("Chat session not found");
+
       const stream = await sendMessageStream(chatSession, prompt);
+      
       for await (const chunk of stream) {
         setConversations(prev => prev.map(c => {
             if (c.id === activeConversationId) {
@@ -223,43 +236,6 @@ const App: React.FC = () => {
       setContentToSave(null);
   };
 
-  const onGenerateFlashcardsAction = async (folderId: string) => {
-      const folder = folders.find(f => f.id === folderId);
-      if (!folder || folder.snippets.length === 0) return;
-      setIsGenerating(true);
-      try {
-          const cards = await generateFlashcards(folder.snippets.map(s => s.content));
-          setStudyToolState({ type: 'flashcards', data: cards, folderName: folder.name });
-      } catch (e) {} finally { setIsGenerating(false); }
-  };
-
-  const onGenerateQuizAction = async (folderId: string) => {
-      const folder = folders.find(f => f.id === folderId);
-      if (!folder || folder.snippets.length === 0) return;
-      setIsGenerating(true);
-      try {
-          const quiz = await generateQuiz(folder.snippets.map(s => s.content));
-          setStudyToolState({ type: 'quiz', data: quiz, folderName: folder.name });
-      } catch (e) {} finally { setIsGenerating(false); }
-  };
-
-  const onGenerateMindMapAction = async (folderId: string) => {
-      const folder = folders.find(f => f.id === folderId);
-      if (!folder || folder.snippets.length === 0) return;
-      setIsGenerating(true);
-      try {
-          const mindMapText = await generateMindMap(folder.snippets.map(s => s.content));
-          if (!activeConversationId) handleNewChat();
-          // Find the newest conversation if we just created one
-          const convoId = activeConversationId || conversations[0]?.id;
-          if (convoId) {
-             const userMessage: Message = { id: Date.now().toString(), role: 'user', content: `Visualize a mind map for my folder: ${folder.name}` };
-             const modelMessage: Message = { id: (Date.now() + 1).toString(), role: 'model', content: mindMapText };
-             setConversations(prev => prev.map(c => c.id === convoId ? { ...c, messages: [...c.messages, userMessage, modelMessage] } : c));
-          }
-      } catch (e) {} finally { setIsGenerating(false); }
-  };
-
   const handleSendRoomMessage = async (text: string) => {
       if (!activeRoomId) return;
       await sendFirebaseRoomMessage(activeRoomId, { senderId: userId, text });
@@ -283,12 +259,11 @@ const App: React.FC = () => {
   if (initializationError) return <div className="flex h-screen w-screen items-center justify-center p-10 text-red-600 bg-red-50 text-center font-bold text-xl">{initializationError}</div>;
 
   return (
-    <div className="h-screen w-screen flex overflow-hidden relative">
+    <div className="h-screen w-screen flex overflow-hidden">
         <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-[280px]' : 'w-0'}`}>
           <Sidebar
             conversations={conversations}
             rooms={rooms}
-            folders={folders}
             activeConversationId={activeConversationId}
             activeRoomId={activeRoomId}
             onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -297,17 +272,16 @@ const App: React.FC = () => {
             onSelectRoom={handleSelectRoom}
             onOpenNotepad={() => setIsNotepadOpen(true)}
             onOpenRoomModal={() => setIsRoomModalOpen(true)}
-            onOpenTelegramModal={() => setIsTelegramModalOpen(false)}
-            onGenerateFlashcards={onGenerateFlashcardsAction}
-            onGenerateQuiz={onGenerateQuizAction}
-            onGenerateMindMap={onGenerateMindMapAction}
+            onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
           />
         </div>
+
         {!isSidebarOpen && (
           <button onClick={() => setIsSidebarOpen(true)} className="absolute top-5 left-4 z-10 p-1.5 text-gray-500 hover:bg-gray-100 rounded-md">
             <MenuIcon className="w-5 h-5" />
           </button>
         )}
+
         <main className="flex-1 flex flex-col bg-[#F9F9F9] relative">
           {activeConversation && (
             <ChatView
@@ -336,36 +310,17 @@ const App: React.FC = () => {
               isSidebarOpen={isSidebarOpen}
             />
           )}
+          {activeRoomId && !activeRoom && (
+             <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mr-2"></div>
+                <span>Syncing Room...</span>
+             </div>
+          )}
         </main>
-      {isGenerating && (
-          <div className="fixed inset-0 bg-white/60 backdrop-blur-md z-[100] flex flex-col items-center justify-center animate-fade-in">
-              <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-6"></div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Creating Study Guide</h2>
-              <p className="text-gray-500 max-w-xs text-center font-medium">Pixel AI is analyzing your saved snippets to generate high-quality interactive content...</p>
-          </div>
-      )}
       <NotepadModal isOpen={isNotepadOpen} onClose={() => setIsNotepadOpen(false)} notes={notes} onUpdateNotes={setNotes} folders={folders} onUpdateFolders={setFolders} />
       <RoomModal isOpen={isRoomModalOpen} onClose={() => setIsRoomModalOpen(false)} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />
-      <TelegramModal 
-        isOpen={isTelegramModalOpen} 
-        onClose={() => setIsTelegramModalOpen(false)} 
-        onSave={(token, recipients) => {
-            const creds = { token, recipients };
-            setTelegramCredentials(creds);
-            localStorage.setItem(TELEGRAM_CREDS_KEY, JSON.stringify(creds));
-        }} 
-        initialToken={telegramCredentials?.token}
-        initialRecipients={telegramCredentials?.recipients}
-      />
+      <TelegramModal isOpen={isTelegramModalOpen} onClose={() => setIsTelegramModalOpen(false)} onSave={() => {}} />
       <TopicSelectorModal isOpen={isTopicSelectorOpen} onClose={() => setIsTopicSelectorOpen(false)} folders={folders} onSaveToTopic={onSaveToTopic} onCreateAndSave={onCreateAndSave} />
-      {studyToolState && (
-          <StudyToolModal 
-            type={studyToolState.type}
-            data={studyToolState.data}
-            folderName={studyToolState.folderName}
-            onClose={() => setStudyToolState(null)}
-          />
-      )}
     </div>
   );
 };

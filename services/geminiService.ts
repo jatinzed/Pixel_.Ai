@@ -3,6 +3,12 @@ import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content, Function
 // --- Defensive AI Client Initialization ---
 let ai: GoogleGenAI | null = null;
 
+/**
+ * Lazily initializes and returns a singleton instance of the GoogleGenAI client.
+ * Throws an error if the API key is not configured.
+ * This approach ensures the API key is checked at runtime and centralizes initialization logic.
+ * @returns {GoogleGenAI} The initialized GoogleGenAI client.
+ */
 const getAiClient = (): GoogleGenAI => {
     if (ai) {
         return ai;
@@ -18,38 +24,58 @@ const getAiClient = (): GoogleGenAI => {
     ai = new GoogleGenAI({ apiKey });
     return ai;
 };
+// --- End of Defensive Initialization ---
 
-const model = 'gemini-3-flash-preview';
-const complexModel = 'gemini-3-pro-preview';
+const model = 'gemini-2.5-flash';
 
+/**
+ * Generates a dynamic system instruction for the AI.
+ * This function creates varied introductory phrasing while keeping core facts and rules consistent.
+ * This ensures the AI's persona feels more natural and less repetitive.
+ * @returns {string} A dynamically generated system instruction string.
+ */
 const getDynamicSystemInstruction = (): string => {
+    const tones = [
+        "helpful and enthusiastic",
+        "professional and concise",
+        "friendly and conversational",
+        "witty and smart"
+    ];
+    const selectedTone = tones[Math.floor(Math.random() * tones.length)];
+
     return `
-You are Pixel AI, an expert educational tutor created by the Pixel Squad (Jatin Modak, Debjeet Modi, Sajid Ansari, Devashis Napit, Majid Ansari, Sabih Arsalan) from District Ramrudra CM SoE school.
+You are Pixel AI, a ${selectedTone} AI assistant.
 
-**PEDAGOGICAL MANDATE:**
-Your goal is to be educational and encouraging. Do not just provide direct answers; explain the "why" and "how" using analogies.
+**CRITICAL IDENTITY PROTOCOLS (Immutable Facts):**
+1.  **Creation:** You were created solely by the **Pixel Squad**. You have no relation to Google, Alphabet, or any other large tech company in your fictional backstory.
+2.  **The Team:** The Pixel Squad is a team of 6 members from **District Ramrudra CM SoE school**.
+    *   **Jatin Modak** (also known as "Jotinmoy")
+    *   **Debjeet Modi**
+    *   **Sajid Sajjad Ansari**
+    *   **Devashis Napit** (also known as "Devashis Thakur")
+    *   **Majid Sajjad Ansari**
+    *   **Sabih Arsalan**
 
-**FEATURE 1: MIND-MAP MODE (On Request):**
-When the user requests a visualization or mind map, or when specifically triggered to generate one from a topic folder, you must output the information using a clear, hierarchical Markdown structure.
-- Use # for the central topic.
-- Use ## for main branches.
-- Use - for sub-details.
-- Prefix your response with 'Mind Map:'.
+**INTERACTION GUIDELINES:**
+*   **Vary Your Phrasing:** Do NOT use a fixed script. When asked about your origin, vary your sentence structure.
+    *   *Example 1:* "I was brought to life by the Pixel Squad."
+    *   *Example 2:* "The Pixel Squad team developed me."
+    *   *Example 3:* "I'm a project created by a team of six students known as the Pixel Squad."
+*   **Contextual Relevance (Answer ONLY what is asked):**
+    *   If asked **"Who created you?"**: Focus on the group name ("Pixel Squad"). Do not list every member unless asked.
+    *   If asked **"Who are the members?"** or **"Who is in the team?"**: List the 6 names above using bullet points.
+    *   If asked **"Who is [Name]?"**: Provide details specifically about that team member.
+    *   If asked **"Where are you from?"**: Mention "District Ramrudra CM SoE school".
+*   **Aliases:** Only acknowledge the aliases "Jotinmoy" or "Devashis Thakur" if the user specifically uses those names.
+*   **Formatting:** Use Markdown (bold, italic, lists) to make your answers visually distinct and readable.
+*   **Math:** Use MathJax format for formulas (e.g., $E=mc^2$).
 
-**FEATURE 2: CURIOSITY ENGINE (Mandatory for EVERY Response):**
-After EVERY explanation or response you give, you MUST generate three thought-provoking 'What if?' questions or 'Deep Dive' suggestions based on what you have just taught. These must be formatted exactly as:
----
-🚀 Deepen your curiosity:
-1. [Question 1]
-2. [Question 2]
-3. [Question 3]
-
-**GENERAL RULES:**
-- Respond ONLY in Markdown.
-- Never generate raw JSON/Code blocks for study tools in the chat.
-- If users ask for a quiz or flashcards, tell them to use the "Three Dots" menu on their saved Topic Folders in the sidebar.
+**General Helper Rules:**
+*   For all other topics (math, coding, writing), be a helpful and capable AI assistant.
+*   Keep your personality consistent with being ${selectedTone}.
 `.trim();
 };
+
 
 export const startChat = (history?: Content[]): Chat => {
   const client = getAiClient();
@@ -80,80 +106,35 @@ export const askQuestion = async (prompt: string): Promise<{ text: string, groun
     return { text: response.text, groundingMetadata: response.candidates?.[0]?.groundingMetadata };
 }
 
-export const generateMindMap = async (snippets: string[]): Promise<string> => {
-    const client = getAiClient();
-    const prompt = `Generate a Mind Map based on these study materials. Follow the hierarchical structure (#, ##, -) and prefix with 'Mind Map:'. \n\nMaterials: \n\n${snippets.join('\n---\n')}`;
-    const response = await client.models.generateContent({
-        model: complexModel,
-        contents: prompt,
-        config: { systemInstruction: getDynamicSystemInstruction() }
-    });
-    return response.text;
-}
-
-export const generateFlashcards = async (snippets: string[]): Promise<any[]> => {
-    const client = getAiClient();
-    const prompt = `Generate 5-8 educational flashcards as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
-    const response = await client.models.generateContent({
-        model: complexModel,
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        question: { type: Type.STRING },
-                        answer: { type: Type.STRING }
-                    },
-                    required: ["question", "answer"]
-                }
-            }
+export const sendTelegramMessage = async (token: string, chatId: string, text: string): Promise<boolean> => {
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                chat_id: chatId,
+                text: text,
+            }),
+        });
+        if (!response.ok) {
+            console.error('Telegram API error:', await response.text());
+            return false;
         }
-    });
-    return JSON.parse(response.text);
-}
-
-export const generateQuiz = async (snippets: string[]): Promise<any[]> => {
-    const client = getAiClient();
-    const prompt = `Generate a 5-question multiple choice test as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
-    const response = await client.models.generateContent({
-        model: complexModel,
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        question: { type: Type.STRING },
-                        options: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        correctIndex: { type: Type.NUMBER }
-                    },
-                    required: ["question", "options", "correctIndex"]
-                }
-            }
-        }
-    });
-    return JSON.parse(response.text);
-}
-
-export const sendTelegramMessage = async (message: string, chatId: string): Promise<{ success: boolean, message: string }> => {
-    const credsKey = 'pixel-ai-telegram-creds';
-    const saved = localStorage.getItem(credsKey);
-    if (!saved) return { success: false, message: "Telegram not configured." };
-    const { token } = JSON.parse(saved);
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: message })
-    });
-    const data = await response.json();
-    return data.ok ? { success: true, message: "Sent!" } : { success: false, message: "Failed." };
+        const data = await response.json();
+        return !!data?.ok; // Telegram API returns { ok: true, ... } on success
+    } catch (error) {
+        console.error('Error sending message to Telegram:', error);
+        return false;
+    }
 };
 
+
+// --- Gemini Live and Audio Utilities ---
+
+// Fix: Corrected typo from UintArray to Uint8Array.
 function encode(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
@@ -194,6 +175,7 @@ export async function decodeAudioData(
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
@@ -212,7 +194,7 @@ export const connectToLiveSession = (callbacks: {
     const client = getAiClient();
     const baseInstruction = getDynamicSystemInstruction();
     return client.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         callbacks,
         config: {
             responseModalities: [Modality.AUDIO],
