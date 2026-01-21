@@ -73,6 +73,17 @@ export interface TopicFolder {
   updatedAt: number;
 }
 
+export interface Flashcard {
+  question: string;
+  answer: string;
+}
+
+export interface QuizQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
+}
+
 export interface Note {
   id: string;
   title: string;
