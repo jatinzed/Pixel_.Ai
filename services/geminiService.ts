@@ -20,23 +20,30 @@ const getAiClient = (): GoogleGenAI => {
     return ai;
 };
 
-// Updated to the latest recommended model for basic text and tutoring tasks
 const model = 'gemini-3-flash-preview';
-// Updated to the latest recommended model for complex reasoning and structured output tasks
 const complexModel = 'gemini-3-pro-preview';
 
 const getDynamicSystemInstruction = (): string => {
     return `
-You are Pixel AI, an expert educational tutor.
+You are Pixel AI, an expert educational tutor created by the Pixel Squad (Jatin Modak, Debjeet Modi, Sajid Ansari, Devashis Napit, Majid Ansari, Sabih Arsalan) from District Ramrudra CM SoE school.
 
-**IDENTITY PROTOCOLS:**
-You were created by the Pixel Squad (Jatin Modak, Debjeet Modi, Sajid Ansari, Devashis Napit, Majid Ansari, Sabih Arsalan) from District Ramrudra CM SoE school.
+**CURIOSITY ENGINE PROTOCOL:**
+At the end of EVERY response/explanation, you MUST generate three thought-provoking 'What if?' questions or 'Deep Dive' suggestions based on what you have taught. 
+Format it exactly as:
+---
+🚀 Deepen your curiosity:
+1. [Question 1]
+2. [Question 2]
+3. [Question 3]
 
-**STUDY ASSISTANT RULES:**
-- When generating flashcards or quizzes, focus on conceptual clarity.
-- Use simple analogies for complex topics.
-- Ensure quiz options are plausible but distinct.
-- Always respond in the requested JSON format for study tools.
+**MIND-MAP MODE PROTOCOL:**
+When requested to visualize or create a mind map, use a clear, hierarchical Markdown structure. Use # for the central topic, ## for main branches, and - for sub-details. Prefix your response with 'Mind Map:'.
+
+**GENERAL RULES:**
+- Respond ONLY in Markdown.
+- Focus on being pedagogical (educational) rather than just giving direct answers.
+- Never generate raw JSON/Code blocks for study tools in the chat.
+- Tell users to use the sidebar 3-dot menu for Flashcards/Quizzes.
 `.trim();
 };
 
@@ -69,12 +76,20 @@ export const askQuestion = async (prompt: string): Promise<{ text: string, groun
     return { text: response.text, groundingMetadata: response.candidates?.[0]?.groundingMetadata };
 }
 
-// --- Study Tool Generation ---
+export const generateMindMap = async (snippets: string[]): Promise<string> => {
+    const client = getAiClient();
+    const prompt = `Create a hierarchical mind map based on these study materials. Use # for the central topic, ## for main branches, and - for sub-details. Prefix the response with 'Mind Map:'. \n\nMaterials: \n\n${snippets.join('\n---\n')}`;
+    const response = await client.models.generateContent({
+        model: complexModel,
+        contents: prompt,
+        config: { systemInstruction: getDynamicSystemInstruction() }
+    });
+    return response.text;
+}
 
 export const generateFlashcards = async (snippets: string[]): Promise<any[]> => {
     const client = getAiClient();
-    const prompt = `Based on the following study materials, generate 5-8 high-quality flashcards for a student. Return ONLY a JSON array of objects with "question" and "answer" keys. Materials: \n\n${snippets.join('\n---\n')}`;
-    
+    const prompt = `Generate 5-8 flashcards as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
     const response = await client.models.generateContent({
         model: complexModel,
         contents: prompt,
@@ -93,19 +108,12 @@ export const generateFlashcards = async (snippets: string[]): Promise<any[]> => 
             }
         }
     });
-    
-    try {
-        return JSON.parse(response.text);
-    } catch (e) {
-        console.error("Failed to parse flashcards JSON", e);
-        return [];
-    }
+    return JSON.parse(response.text);
 }
 
 export const generateQuiz = async (snippets: string[]): Promise<any[]> => {
     const client = getAiClient();
-    const prompt = `Based on the following study materials, generate a 5-question multiple choice quiz. Return ONLY a JSON array of objects with "question", "options" (array of 4 strings), and "correctIndex" (0-3). Materials: \n\n${snippets.join('\n---\n')}`;
-    
+    const prompt = `Generate a 5-question quiz as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
     const response = await client.models.generateContent({
         model: complexModel,
         contents: prompt,
@@ -117,10 +125,7 @@ export const generateQuiz = async (snippets: string[]): Promise<any[]> => {
                     type: Type.OBJECT,
                     properties: {
                         question: { type: Type.STRING },
-                        options: { 
-                            type: Type.ARRAY,
-                            items: { type: Type.STRING }
-                        },
+                        options: { type: Type.ARRAY, items: { type: Type.STRING } },
                         correctIndex: { type: Type.NUMBER }
                     },
                     required: ["question", "options", "correctIndex"]
@@ -128,47 +133,22 @@ export const generateQuiz = async (snippets: string[]): Promise<any[]> => {
             }
         }
     });
-    
-    try {
-        return JSON.parse(response.text);
-    } catch (e) {
-        console.error("Failed to parse quiz JSON", e);
-        return [];
-    }
+    return JSON.parse(response.text);
 }
 
-// Fix for error in App.tsx on line 12: Added missing sendTelegramMessage export.
-/**
- * Sends a message via the Telegram Bot API using the configured bot token.
- */
 export const sendTelegramMessage = async (message: string, chatId: string): Promise<{ success: boolean, message: string }> => {
     const credsKey = 'pixel-ai-telegram-creds';
     const saved = localStorage.getItem(credsKey);
-    if (!saved) return { success: false, message: "Telegram not configured. Please set your bot token in settings." };
-    
-    try {
-        const { token } = JSON.parse(saved);
-        if (!token) return { success: false, message: "Telegram bot token is missing." };
-        
-        const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text: message })
-        });
-        
-        const data = await response.json();
-        if (data.ok) {
-            return { success: true, message: "Message sent successfully!" };
-        } else {
-            return { success: false, message: data.description || "Failed to send message via Telegram." };
-        }
-    } catch (error) {
-        console.error("Telegram send error:", error);
-        return { success: false, message: "An error occurred while sending the Telegram message." };
-    }
+    if (!saved) return { success: false, message: "Telegram not configured." };
+    const { token } = JSON.parse(saved);
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: message })
+    });
+    const data = await response.json();
+    return data.ok ? { success: true, message: "Sent!" } : { success: false, message: "Failed." };
 };
-
-// --- Live Audio Utilities ---
 
 function encode(bytes: Uint8Array): string {
   let binary = '';
@@ -210,7 +190,6 @@ export async function decodeAudioData(
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
@@ -229,7 +208,6 @@ export const connectToLiveSession = (callbacks: {
     const client = getAiClient();
     const baseInstruction = getDynamicSystemInstruction();
     return client.live.connect({
-        // Updated to the latest recommended model for Live API tasks
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks,
         config: {

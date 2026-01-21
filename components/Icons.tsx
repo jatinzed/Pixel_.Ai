@@ -1,3 +1,4 @@
+
 import React, { FC } from 'react';
 
 type IconProps = {
@@ -7,6 +8,16 @@ type IconProps = {
 export const PlusIcon: React.FC<IconProps> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+  </svg>
+);
+
+export const MindMapIcon: React.FC<IconProps> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-10.25V15m-10.5 3h15M12 3v12m-5.25 3h10.5" />
+    <circle cx="12" cy="3" r="1" fill="currentColor" />
+    <circle cx="5.25" cy="18" r="1" fill="currentColor" />
+    <circle cx="12" cy="18" r="1" fill="currentColor" />
+    <circle cx="18.75" cy="18" r="1" fill="currentColor" />
   </svg>
 );
 
