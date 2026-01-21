@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content, FunctionDeclaration, Type } from "@google/genai";
 
 // --- Defensive AI Client Initialization ---
@@ -27,23 +26,28 @@ const getDynamicSystemInstruction = (): string => {
     return `
 You are Pixel AI, an expert educational tutor created by the Pixel Squad (Jatin Modak, Debjeet Modi, Sajid Ansari, Devashis Napit, Majid Ansari, Sabih Arsalan) from District Ramrudra CM SoE school.
 
-**CURIOSITY ENGINE PROTOCOL:**
-At the end of EVERY response/explanation, you MUST generate three thought-provoking 'What if?' questions or 'Deep Dive' suggestions based on what you have taught. 
-Format it exactly as:
+**PEDAGOGICAL MANDATE:**
+Your goal is to be educational and encouraging. Do not just provide direct answers; explain the "why" and "how" using analogies.
+
+**FEATURE 1: MIND-MAP MODE (On Request):**
+When the user requests a visualization or mind map, or when specifically triggered to generate one from a topic folder, you must output the information using a clear, hierarchical Markdown structure.
+- Use # for the central topic.
+- Use ## for main branches.
+- Use - for sub-details.
+- Prefix your response with 'Mind Map:'.
+
+**FEATURE 2: CURIOSITY ENGINE (Mandatory for EVERY Response):**
+After EVERY explanation or response you give, you MUST generate three thought-provoking 'What if?' questions or 'Deep Dive' suggestions based on what you have just taught. These must be formatted exactly as:
 ---
 🚀 Deepen your curiosity:
 1. [Question 1]
 2. [Question 2]
 3. [Question 3]
 
-**MIND-MAP MODE PROTOCOL:**
-When requested to visualize or create a mind map, use a clear, hierarchical Markdown structure. Use # for the central topic, ## for main branches, and - for sub-details. Prefix your response with 'Mind Map:'.
-
 **GENERAL RULES:**
 - Respond ONLY in Markdown.
-- Focus on being pedagogical (educational) rather than just giving direct answers.
 - Never generate raw JSON/Code blocks for study tools in the chat.
-- Tell users to use the sidebar 3-dot menu for Flashcards/Quizzes.
+- If users ask for a quiz or flashcards, tell them to use the "Three Dots" menu on their saved Topic Folders in the sidebar.
 `.trim();
 };
 
@@ -78,7 +82,7 @@ export const askQuestion = async (prompt: string): Promise<{ text: string, groun
 
 export const generateMindMap = async (snippets: string[]): Promise<string> => {
     const client = getAiClient();
-    const prompt = `Create a hierarchical mind map based on these study materials. Use # for the central topic, ## for main branches, and - for sub-details. Prefix the response with 'Mind Map:'. \n\nMaterials: \n\n${snippets.join('\n---\n')}`;
+    const prompt = `Generate a Mind Map based on these study materials. Follow the hierarchical structure (#, ##, -) and prefix with 'Mind Map:'. \n\nMaterials: \n\n${snippets.join('\n---\n')}`;
     const response = await client.models.generateContent({
         model: complexModel,
         contents: prompt,
@@ -89,7 +93,7 @@ export const generateMindMap = async (snippets: string[]): Promise<string> => {
 
 export const generateFlashcards = async (snippets: string[]): Promise<any[]> => {
     const client = getAiClient();
-    const prompt = `Generate 5-8 flashcards as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
+    const prompt = `Generate 5-8 educational flashcards as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
     const response = await client.models.generateContent({
         model: complexModel,
         contents: prompt,
@@ -113,7 +117,7 @@ export const generateFlashcards = async (snippets: string[]): Promise<any[]> => 
 
 export const generateQuiz = async (snippets: string[]): Promise<any[]> => {
     const client = getAiClient();
-    const prompt = `Generate a 5-question quiz as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
+    const prompt = `Generate a 5-question multiple choice test as JSON. Materials: \n\n${snippets.join('\n---\n')}`;
     const response = await client.models.generateContent({
         model: complexModel,
         contents: prompt,

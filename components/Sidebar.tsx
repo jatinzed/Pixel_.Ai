@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
     PlusIcon, 
@@ -107,7 +106,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                                         e.stopPropagation();
                                         setOpenMenuId(openMenuId === folder.id ? null : folder.id);
                                     }}
-                                    className={`p-1.5 rounded-lg transition-all ${openMenuId === folder.id ? 'bg-indigo-200 text-indigo-800' : 'text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 group-hover:text-gray-500'}`}
+                                    className={`p-1.5 rounded-lg transition-all ${openMenuId === folder.id ? 'bg-indigo-200 text-indigo-800' : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-100'}`}
                                 >
                                     <DotsHorizontalIcon className="w-5 h-5" />
                                 </button>
