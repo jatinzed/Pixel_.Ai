@@ -15,11 +15,11 @@ export const getAiClient = (): GoogleGenAI => {
     return ai;
 };
 
-// Model Hierarchy as requested
+// Model Hierarchy as requested: 2.5 Flash is now priority
 const MODEL_PRIORITY = [
-    'gemini-3-pro-preview',      // High Intelligence
-    'gemini-2.5-flash',          // Balanced
-    'gemini-flash-lite-latest',  // Efficient
+    'gemini-2.5-flash',          // Primary (Fast, Balanced)
+    'gemini-3-pro-preview',      // High Intelligence Fallback
+    'gemini-flash-lite-latest',  // Efficient Fallback
     'gemini-3-flash-preview'     // Reliable Backup
 ];
 
@@ -82,7 +82,7 @@ async function callWithFallback(
 
 export const startChat = (history?: Content[]): Chat => {
   const client = getAiClient();
-  // Start with the top priority model
+  // Start with the top priority model (gemini-2.5-flash)
   return client.chats.create({
     model: MODEL_PRIORITY[0],
     history: history,
@@ -104,7 +104,7 @@ export const sendMessageStream = async (chat: Chat, message: string) => {
         const history = await chat.getHistory();
         const client = getAiClient();
         
-        // Try remaining models in order
+        // Try remaining models in order starting from index 1 (gemini-3-pro-preview)
         for (const modelName of MODEL_PRIORITY.slice(1)) {
             try {
                 const fallbackChat = client.chats.create({
@@ -115,8 +115,6 @@ export const sendMessageStream = async (chat: Chat, message: string) => {
                         tools: [{googleSearch: {}}],
                     },
                 });
-                // Note: The caller needs to be aware that the chat object changed if they store it.
-                // For this implementation, we return the stream from the new session.
                 return await fallbackChat.sendMessageStream({ message });
             } catch (fallbackErr) {
                 continue;
@@ -161,7 +159,11 @@ export const generateStudyMaterial = async (content: string, type: 'quiz' | 'fla
     } else if (type === 'flashcards') {
         prompt = `Create 10 flashcards as JSON: {"flashcards": [{"front": "", "back": ""}]}. Content: ${content}`;
     } else {
-        prompt = `Create a hierarchical Markdown mindmap. Return ONLY raw markdown. Content: ${content}`;
+        prompt = `Create a detailed hierarchical Knowledge Mind Map in Markdown format. 
+        Use '#' for the root concept, '##' for main branches, '###' for sub-branches.
+        Do NOT skip levels (e.g., don't go from # to ###).
+        Return ONLY the raw markdown. 
+        Content: ${content}`;
     }
 
     const { response } = await callWithFallback(
