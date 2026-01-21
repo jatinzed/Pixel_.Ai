@@ -9,10 +9,10 @@ export const getAiClient = (): GoogleGenAI => {
     }
 
     // Use environment variable if available, otherwise fallback to the hardcoded key provided by the user
-    const apiKey = process.env.API_KEY || "AIzaSyCF2B8zGDzKpFQR48zStgq-pVMPb3hh16c";
+    const apiKey = process.env.GEMINI_API_KEY || "AIzaSyCF2B8zGDzKpFQR48zStgq-pVMPb3hh16c";
     
     if (!apiKey) {
-        const errorMessage = "API key is not configured. Please set the API_KEY environment variable or check the hardcoded fallback.";
+        const errorMessage = "API key is not configured. Please set the GEMINI_API_KEY environment variable or check the hardcoded fallback.";
         console.error(errorMessage);
         throw new Error(errorMessage);
     }
