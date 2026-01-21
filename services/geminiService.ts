@@ -1,61 +1,90 @@
-import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content, FunctionDeclaration, Type } from "@google/genai";
+import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content, FunctionDeclaration, Type, GenerateContentResponse } from "@google/genai";
 
 // --- Defensive AI Client Initialization ---
 let ai: GoogleGenAI | null = null;
 
 export const getAiClient = (): GoogleGenAI => {
-    if (ai) {
-        return ai;
-    }
-
+    if (ai) return ai;
     const apiKey = process.env.GEMINI_API_KEY || "AIzaSyCF2B8zGDzKpFQR48zStgq-pVMPb3hh16c";
-    
     if (!apiKey) {
         const errorMessage = "API key is not configured. Please set the GEMINI_API_KEY environment variable.";
         console.error(errorMessage);
         throw new Error(errorMessage);
     }
-    
     ai = new GoogleGenAI({ apiKey });
     return ai;
 };
 
-// Use Gemini 2.5 Flash as requested
-const model = 'gemini-2.5-flash';
+// Model Hierarchy as requested
+const MODEL_PRIORITY = [
+    'gemini-3-pro-preview',      // High Intelligence
+    'gemini-2.5-flash',          // Balanced
+    'gemini-flash-lite-latest',  // Efficient
+    'gemini-3-flash-preview'     // Reliable Backup
+];
 
 const getDynamicSystemInstruction = (): string => {
     return `
 You are Pixel AI, an advanced LLM-based pedagogical tutor. 
 
 **IDENTITY & TONE PROTOCOLS:**
-1. **Be Concise & Natural:** Do NOT introduce yourself (e.g., "I am Pixel AI") or mention your creators in every response. Jump straight into helping the student.
+1. **Be Concise & Natural:** Do NOT introduce yourself or mention your creators in every response.
 2. **LLM Terminology:** Refer to yourself as an "LLM" or "AI Intelligence". NEVER use the name "Gemini".
 3. **Creator Disclosure:** 
    - If asked "Who created you?", say: "I was created by the Pixel Squad from District Ramrudra CM SoE school."
-   - ONLY if asked specifically "Who consists of the Pixel Squad?" or "Who are the members of Pixel Squad?", then list: Jatin Modak, Debjeet Modi, Sajid Sajjad Ansari, Devashis Napit, Majid Sajjad Ansari, and Sabih Arsalan.
+   - If asked about the members, list: Jatin Modak, Debjeet Modi, Sajid Sajjad Ansari, Devashis Napit, Majid Sajjad Ansari, and Sabih Arsalan.
 
 **PEDAGOGICAL CORE:**
-- **Teach, Don't Just Tell:** Guide the student through concepts using analogies and step-by-step logic.
-- **Clarity:** Use Markdown for structure. Use MathJax for formulas (e.g., $E=mc^2$).
+- Teach using analogies and step-by-step logic.
+- Use MathJax for formulas (e.g., $E=mc^2$).
 
 **CURIOSITY ENGINE:**
-After every significant explanation, append a curiosity section:
+After explanations, append:
 ---
 🚀 Deepen your curiosity:
-1. [Thought-provoking question]
-2. [Deep-dive suggestion]
-3. [Research challenge]
-
-**SPECIAL TOOLS:**
-- Use Google Search for up-to-date information.
-- Simplify concepts if the user asks for the "Easy way".
+1. [Question]
+2. [Suggestion]
+3. [Challenge]
 `.trim();
 };
 
+/**
+ * Utility to execute a content generation call with automatic model fallback.
+ */
+async function callWithFallback(
+    prompt: string | any, 
+    config: any = {}, 
+    systemInstruction?: string
+): Promise<{ response: GenerateContentResponse, usedModel: string }> {
+    const client = getAiClient();
+    let lastError: any = null;
+
+    for (const modelName of MODEL_PRIORITY) {
+        try {
+            const response = await client.models.generateContent({
+                model: modelName,
+                contents: prompt,
+                config: {
+                    systemInstruction: systemInstruction || getDynamicSystemInstruction(),
+                    tools: [{ googleSearch: {} }],
+                    ...config
+                },
+            });
+            return { response, usedModel: modelName };
+        } catch (err) {
+            console.warn(`Model ${modelName} failed or exhausted. Trying fallback...`, err);
+            lastError = err;
+            continue;
+        }
+    }
+    throw lastError || new Error("All models failed to respond.");
+}
+
 export const startChat = (history?: Content[]): Chat => {
   const client = getAiClient();
+  // Start with the top priority model
   return client.chats.create({
-    model: model,
+    model: MODEL_PRIORITY[0],
     history: history,
     config: {
       systemInstruction: getDynamicSystemInstruction(),
@@ -64,72 +93,83 @@ export const startChat = (history?: Content[]): Chat => {
   });
 };
 
+/**
+ * Enhanced sendMessageStream that can switch models if a session fails
+ */
 export const sendMessageStream = async (chat: Chat, message: string) => {
-  return await chat.sendMessageStream({ message });
+    try {
+        return await chat.sendMessageStream({ message });
+    } catch (err) {
+        console.warn("Chat session failed, attempting fallback with fresh session...");
+        const history = await chat.getHistory();
+        const client = getAiClient();
+        
+        // Try remaining models in order
+        for (const modelName of MODEL_PRIORITY.slice(1)) {
+            try {
+                const fallbackChat = client.chats.create({
+                    model: modelName,
+                    history: history,
+                    config: {
+                        systemInstruction: getDynamicSystemInstruction(),
+                        tools: [{googleSearch: {}}],
+                    },
+                });
+                // Note: The caller needs to be aware that the chat object changed if they store it.
+                // For this implementation, we return the stream from the new session.
+                return await fallbackChat.sendMessageStream({ message });
+            } catch (fallbackErr) {
+                continue;
+            }
+        }
+        throw err;
+    }
 };
 
 export const askQuestion = async (prompt: string): Promise<{ text: string, groundingMetadata?: any }> => {
-    const client = getAiClient();
-    const response = await client.models.generateContent({
-        model: model,
-        contents: prompt,
-        config: {
-            systemInstruction: getDynamicSystemInstruction(),
-            tools: [{googleSearch: {}}],
-        },
-    });
-    return { text: response.text, groundingMetadata: response.candidates?.[0]?.groundingMetadata };
+    const { response } = await callWithFallback(prompt);
+    return { 
+        text: response.text || "No response generated.", 
+        groundingMetadata: response.candidates?.[0]?.groundingMetadata 
+    };
 }
 
-// Text to Speech (TTS) Implementation
 export const generateSpeech = async (text: string): Promise<string | undefined> => {
   const client = getAiClient();
-  // Using the preview TTS model for Gemini 2.5
-  const response = await client.models.generateContent({
-    model: "gemini-2.5-flash-preview-tts",
-    contents: [{ parts: [{ text: `Read this aloud: ${text}` }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Kore' }, // Clear pedagogical voice
+  try {
+      const response = await client.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `Read this aloud: ${text}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+          },
         },
-      },
-    },
-  });
-  
-  return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      });
+      return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  } catch (e) {
+      console.error("TTS generation failed", e);
+      return undefined;
+  }
 }
 
 export const generateStudyMaterial = async (content: string, type: 'quiz' | 'flashcards' | 'mindmap'): Promise<string> => {
-    const client = getAiClient();
     let prompt = "";
     if (type === 'quiz') {
-        prompt = `Based on the following content, create a challenging and interactive quiz with 5 multiple-choice questions. Format it as JSON with fields "questions" (array of objects with "question", "options", "correctAnswerIndex", "explanation").
-        
-        Content: ${content}`;
+        prompt = `Create a 5-question MCQ quiz as JSON: {"questions": [{"question": "", "options": [], "correctAnswerIndex": 0, "explanation": ""}]}. Content: ${content}`;
     } else if (type === 'flashcards') {
-        prompt = `Based on the following content, create 10 educational flashcards. Format it as JSON with fields "flashcards" (array of objects with "front", "back").
-        
-        Content: ${content}`;
+        prompt = `Create 10 flashcards as JSON: {"flashcards": [{"front": "", "back": ""}]}. Content: ${content}`;
     } else {
-        prompt = `Based on the following content, create a detailed hierarchical mindmap in Markdown format. 
-        Use '#' for the root concept, '##' for main branches, '###' for sub-branches, and so on.
-        Be extremely detailed, comprehensive, and logically organized.
-        Return ONLY the raw markdown content. No code fences, no explanations.
-        
-        Content: ${content}`;
+        prompt = `Create a hierarchical Markdown mindmap. Return ONLY raw markdown. Content: ${content}`;
     }
 
-    const response = await client.models.generateContent({
-        model: model,
-        contents: prompt,
-        config: {
-            systemInstruction: "You are an LLM-based specialized study material generator. Return ONLY the requested format.",
-            responseMimeType: type === 'mindmap' ? "text/plain" : "application/json"
-        },
-    });
-    return response.text;
+    const { response } = await callWithFallback(
+        prompt, 
+        { responseMimeType: type === 'mindmap' ? "text/plain" : "application/json" },
+        "You are an LLM generator. Return ONLY the requested format."
+    );
+    return response.text || "";
 }
 
 export const sendTelegramMessage = async (token: string, chatId: string, text: string): Promise<boolean> => {
@@ -140,82 +180,52 @@ export const sendTelegramMessage = async (token: string, chatId: string, text: s
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ chat_id: chatId, text: text }),
         });
-        if (!response.ok) return false;
-        const data = await response.json();
-        return !!data?.ok;
+        return response.ok;
     } catch (error) {
         return false;
     }
 };
 
-// Live and Audio Utilities...
+// Audio Utilities
 function encode(bytes: Uint8Array): string {
   let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
 
 export function createBlob(data: Float32Array): Blob {
-  const l = data.length;
-  const int16 = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
-    int16[i] = data[i] * 32768;
-  }
-  return {
-    data: encode(new Uint8Array(int16.buffer)),
-    mimeType: 'audio/pcm;rate=16000',
-  };
+  const int16 = new Int16Array(data.length);
+  for (let i = 0; i < data.length; i++) int16[i] = data[i] * 32768;
+  return { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' };
 }
 
 export function decode(base64: string): Uint8Array {
   const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
   return bytes;
 }
 
-export async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
+export async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
+    for (let i = 0; i < frameCount; i++) channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
   }
   return buffer;
 }
 
-export const connectToLiveSession = (callbacks: {
-    onopen: () => void;
-    onmessage: (message: LiveServerMessage) => void;
-    onerror: (e: ErrorEvent) => void;
-    onclose: (e: CloseEvent) => void;
-}, tools?: any[], systemInstruction?: string) => {
+export const connectToLiveSession = (callbacks: any, tools?: any[], systemInstruction?: string) => {
     const client = getAiClient();
-    const baseInstruction = getDynamicSystemInstruction();
     return client.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks,
         config: {
             responseModalities: [Modality.AUDIO],
-            speechConfig: {
-                voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
-            },
-            systemInstruction: systemInstruction ? `${baseInstruction}\n\n${systemInstruction}` : baseInstruction,
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
+            systemInstruction: systemInstruction || getDynamicSystemInstruction(),
             tools,
         },
     });
