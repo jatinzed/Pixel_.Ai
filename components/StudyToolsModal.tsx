@@ -39,7 +39,6 @@ const StudyToolsModal: React.FC<StudyToolsModalProps> = ({ isOpen, onClose, fold
                 .then(res => {
                     try {
                         if (type === 'mindmap') {
-                            // Robust cleaning of code fences
                             const cleaned = res.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim();
                             setData(cleaned);
                         } else {
@@ -58,46 +57,62 @@ const StudyToolsModal: React.FC<StudyToolsModalProps> = ({ isOpen, onClose, fold
 
     useEffect(() => {
         if (type === 'mindmap' && data && visualizerRef.current && isOpen) {
-            // Accessing globals directly from browser scripts
-            const mm = (window as any).markmap;
-            if (mm && mm.Transformer && mm.Markmap) {
-                try {
-                    const transformer = new mm.Transformer();
-                    const { root } = transformer.transform(data);
-                    
-                    // Explicitly clean the SVG
-                    while (visualizerRef.current.firstChild) {
-                        visualizerRef.current.removeChild(visualizerRef.current.firstChild);
+            const initMarkmap = (retryCount = 0) => {
+                const mm = (window as any).markmap;
+                
+                if (mm && mm.Transformer && mm.Markmap) {
+                    try {
+                        const transformer = new mm.Transformer();
+                        const { root } = transformer.transform(data);
+                        
+                        while (visualizerRef.current?.firstChild) {
+                            visualizerRef.current.removeChild(visualizerRef.current.firstChild);
+                        }
+                        
+                        if (visualizerRef.current) {
+                            // Ensure the container has dimensions
+                            const svg = visualizerRef.current;
+                            svg.style.width = '100%';
+                            svg.style.height = '100%';
+
+                            markmapInstance.current = mm.Markmap.create(svg, {
+                                autoFit: true,
+                                duration: 500,
+                                paddingX: 32,
+                                color: (node: any) => {
+                                    const colors = ['#6A5BFF', '#818CF8', '#A5B4FC', '#C7D2FE'];
+                                    return colors[Math.min(node.depth, colors.length - 1)];
+                                }
+                            }, root);
+
+                            // Initial fit
+                            setTimeout(() => {
+                                if (markmapInstance.current) {
+                                    markmapInstance.current.fit();
+                                }
+                            }, 300);
+
+                            // Secondary fit to handle async font loading or layout shifts
+                            setTimeout(() => {
+                                if (markmapInstance.current) {
+                                    markmapInstance.current.fit();
+                                    markmapInstance.current.rescale(1.0);
+                                }
+                            }, 800);
+                        }
+                    } catch (err) {
+                        console.error("Markmap Initialization Error:", err);
+                        setError("Could not render the Knowledge Map structure.");
                     }
-                    
-                    // Create markmap
-                    markmapInstance.current = mm.Markmap.create(visualizerRef.current, {
-                        autoFit: true,
-                        duration: 500,
-                        paddingX: 32,
-                        color: (node: any) => {
-                            const colors = ['#6A5BFF', '#818CF8', '#A5B4FC', '#C7D2FE'];
-                            return colors[Math.min(node.depth, colors.length - 1)];
-                        }
-                    }, root);
-
-                    // Defer the fit operation to ensure DOM layout is complete
-                    const timer = setTimeout(() => {
-                        if (markmapInstance.current) {
-                            markmapInstance.current.fit();
-                            markmapInstance.current.rescale(1.1); // Slight zoom out for better visibility
-                        }
-                    }, 500);
-
-                    return () => clearTimeout(timer);
-                } catch (err) {
-                    console.error("Markmap Initialization Error:", err);
-                    setError("The AI generated a complex structure that couldn't be mapped. Try creating it again.");
+                } else if (retryCount < 8) {
+                    setTimeout(() => initMarkmap(retryCount + 1), 250);
+                } else {
+                    console.error("Markmap globals not found after retries");
+                    setError("Visualization library failed to load. Please refresh the page.");
                 }
-            } else {
-                console.error("Markmap globals not found on window.markmap");
-                setError("Visual study tools are initializing. Please close and re-open this modal.");
-            }
+            };
+
+            initMarkmap();
         }
         
         return () => {
@@ -231,7 +246,7 @@ const StudyToolsModal: React.FC<StudyToolsModalProps> = ({ isOpen, onClose, fold
                             )}
 
                             {type === 'mindmap' && (
-                                <div className="w-full h-full animate-fade-in flex flex-col relative overflow-hidden">
+                                <div className="w-full h-full animate-fade-in flex flex-col relative overflow-hidden bg-white">
                                     <svg 
                                         ref={visualizerRef} 
                                         className="w-full h-full flex-1 touch-none block"
