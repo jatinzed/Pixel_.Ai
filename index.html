@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="https://iili.io/K4QGIa9.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pixel AI</title>
+    <title>Pixel AI - Student Edition</title>
     <script>
       window.MathJax = {
         tex: {
@@ -18,6 +18,13 @@
     </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    
+    <!-- Markmap Requirements -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.16.0/dist/browser/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.16.0/dist/browser/index.js"></script>
+
     <script>
       tailwind.config = {
         theme: {
@@ -40,6 +47,7 @@
       }
       body {
           font-family: "SamsungSharp", sans-serif;
+          background-color: #F9F9F9;
       }
       .prose {
         color: #374151;
@@ -111,6 +119,16 @@
       .prose hr {
           border-top: 1px solid #e5e7eb;
           margin: 2em 0;
+      }
+      .curiosity-engine {
+          margin-top: 1.5rem;
+          padding-top: 1rem;
+          border-top: 2px dashed #E5E7EB;
+          font-size: 0.95rem;
+      }
+      .curiosity-engine h5 {
+          margin-top: 0 !important;
+          color: #6A5BFF !important;
       }
     </style>
   <script type="importmap">

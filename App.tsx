@@ -2,11 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
 import RoomView from './components/RoomView';
+import FolderView from './components/FolderView';
 import NotepadModal from './components/NotepadModal';
 import RoomModal from './components/RoomModal';
 import TelegramModal from './components/TelegramModal';
+import StudyToolsModal from './components/StudyToolsModal';
+import AddToFolderModal from './components/AddToFolderModal';
 import { MenuIcon } from './components/Icons';
-import { Conversation, Message, Room, RoomMessage, TelegramCredentials, TelegramRecipient, Note } from './types';
+import { Conversation, Message, Room, RoomMessage, TelegramCredentials, Note, Folder, SavedItem } from './types';
 import { startChat, sendMessageStream, askQuestion, sendTelegramMessage } from './services/geminiService';
 import { 
     login, 
@@ -21,42 +24,44 @@ import {
 
 const USER_ID_KEY = 'pixel-ai-user-id';
 const CONVERSATIONS_KEY_PREFIX = 'pixel-ai-conversations-';
-const NOTEPAD_KEY_PREFIX = 'pixel-ai-notepad-';
+const FOLDERS_KEY_PREFIX = 'pixel-ai-folders-';
 const TELEGRAM_CREDS_KEY = 'pixel-ai-telegram-creds';
 
 const App: React.FC = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   
-  // Rooms state (Metadata only)
   const [rooms, setRooms] = useState<Room[]>([]);
-  // Active Room Messages (Real-time data)
   const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([]);
 
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Modals
   const [isNotepadOpen, setIsNotepadOpen] = useState(false);
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
+  const [isStudyToolsOpen, setIsStudyToolsOpen] = useState(false);
+  const [isAddToFolderModalOpen, setIsAddToFolderModalOpen] = useState(false);
   
+  const [pendingSaveContent, setPendingSaveContent] = useState<string | null>(null);
+  const [studyToolConfig, setStudyToolConfig] = useState<{folder: Folder, type: 'quiz' | 'flashcards' | 'mindmap'} | null>(null);
+
   const [userId, setUserId] = useState<string>('');
   const [notes, setNotes] = useState<Note[]>([]);
-  
   const [telegramCredentials, setTelegramCredentials] = useState<TelegramCredentials | null>(null);
   const [initializationError, setInitializationError] = useState<string | null>(null);
 
-  // 1. Initialize Firebase Auth
+  // Auth Init
   useEffect(() => {
     const initAuth = async () => {
         try {
             const user = await login();
-            console.log("Logged in to Firebase as:", user.uid);
             setUserId(user.uid);
-            // We use the Firebase UID as the user ID for consistency
         } catch (error) {
-            console.error("Firebase Auth failed", error);
-            // Fallback to local ID if firebase fails entirely
             let localId = localStorage.getItem(USER_ID_KEY);
             if (!localId) {
                 localId = `user_${crypto.randomUUID().substring(0, 8)}`;
@@ -68,26 +73,18 @@ const App: React.FC = () => {
     initAuth();
   }, []);
 
-  // 2. Listen to User's Rooms (Sidebar List)
+  // Listen to Rooms
   useEffect(() => {
     if (!userId) return;
     try {
-        const unsubscribe = listenToUserRooms(userId, (updatedRooms) => {
-            setRooms(updatedRooms);
-        });
+        const unsubscribe = listenToUserRooms(userId, (updatedRooms) => { setRooms(updatedRooms); });
         return () => unsubscribe();
-    } catch (e) {
-        console.error("Firebase room listener failed", e);
-    }
+    } catch (e) { console.error(e); }
   }, [userId]);
 
-  // 3. Listen to Active Room Messages (Subcollection)
   useEffect(() => {
-      if (!activeRoomId) {
-          setRoomMessages([]);
-          return;
-      }
-      setIsLoading(true); // Show loader while fetching
+      if (!activeRoomId) { setRoomMessages([]); return; }
+      setIsLoading(true);
       const unsubscribe = listenToMessages(activeRoomId, (msgs) => {
           setRoomMessages(msgs);
           setIsLoading(false);
@@ -97,139 +94,62 @@ const App: React.FC = () => {
 
   const handleNewChat = useCallback(() => {
     if (initializationError) return;
-    setIsLoading(false);
     setActiveRoomId(null);
+    setActiveFolderId(null);
     try {
         const newConversation: Conversation = {
           id: Date.now().toString(),
-          title: 'New Chat',
+          title: 'New Study Chat',
           messages: [],
           chatSession: startChat(),
         };
         setConversations(prev => [newConversation, ...prev]);
         setActiveConversationId(newConversation.id);
     } catch (error) {
-        console.error("Initialization Error on new chat:", error);
         if (error instanceof Error) setInitializationError(error.message);
     }
   }, [initializationError]);
 
-  // Load conversations
+  // Load persistence
   useEffect(() => {
       if (!userId) return;
       const key = `${CONVERSATIONS_KEY_PREFIX}${userId}`;
-      const saved = localStorage.getItem(key);
+      const folderKey = `${FOLDERS_KEY_PREFIX}${userId}`;
+      
+      const savedConv = localStorage.getItem(key);
+      const savedFolders = localStorage.getItem(folderKey);
+
+      if (savedFolders) {
+          try { setFolders(JSON.parse(savedFolders)); } catch (e) { setFolders([]); }
+      }
+
       try {
-          if (saved) {
-              const savedConversations: Omit<Conversation, 'chatSession'>[] = JSON.parse(saved);
-              if (savedConversations.length > 0) {
-                  const rehydrated = savedConversations.map(c => ({
+          if (savedConv) {
+              const saved: Omit<Conversation, 'chatSession'>[] = JSON.parse(savedConv);
+              if (saved.length > 0) {
+                  const rehydrated = saved.map(c => ({
                       ...c,
-                      chatSession: startChat(c.messages.map(msg => ({
-                          role: msg.role,
-                          parts: [{ text: msg.content }],
-                      }))),
+                      chatSession: startChat(c.messages.map(msg => ({ role: msg.role, parts: [{ text: msg.content }] }))),
                   }));
                   setConversations(rehydrated);
                   setActiveConversationId(rehydrated[0]?.id || null);
-              } else { handleNewChat(); }
-          } else { handleNewChat(); }
-      } catch (e) { 
-          if (e instanceof Error && e.message.includes("API key")) {
-             setInitializationError(e.message);
-          } else {
-             localStorage.removeItem(key); 
-             handleNewChat(); 
-          }
-      }
+              } else handleNewChat();
+          } else handleNewChat();
+      } catch (e) { handleNewChat(); }
   }, [userId, handleNewChat]);
 
-  // Save conversations
+  // Sync state to localstorage
   useEffect(() => {
-      if (!userId || conversations.length === 0) return;
-      const toSave = conversations.filter(c => c.messages.length > 0).map(({ chatSession, ...rest }) => rest);
-      if (toSave.length > 0) {
+      if (!userId) return;
+      if (conversations.length > 0) {
+          const toSave = conversations.map(c => {
+              const { chatSession, ...rest } = c;
+              return rest;
+          });
           localStorage.setItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`, JSON.stringify(toSave));
-      } else {
-          localStorage.removeItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`);
       }
-  }, [conversations, userId]);
-  
-  // Load/Save Notes
-  useEffect(() => {
-    if (!userId) return;
-    const key = `${NOTEPAD_KEY_PREFIX}${userId}`;
-    const savedContent = localStorage.getItem(key);
-    if (savedContent) {
-        try {
-            const parsed = JSON.parse(savedContent);
-            if (Array.isArray(parsed)) setNotes(parsed);
-        } catch (e) {
-            if (savedContent.trim().length > 0) {
-                setNotes([{ id: Date.now().toString(), title: 'My Notes', content: savedContent, updatedAt: Date.now() }]);
-            }
-        }
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    if (!userId) return;
-    localStorage.setItem(`${NOTEPAD_KEY_PREFIX}${userId}`, JSON.stringify(notes));
-  }, [notes, userId]);
-  
-  // Load Telegram Creds
-  useEffect(() => {
-    const savedCreds = localStorage.getItem(TELEGRAM_CREDS_KEY);
-    if (savedCreds) {
-        try { setTelegramCredentials(JSON.parse(savedCreds)); } catch (e) {}
-    }
-  }, []);
-
-  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const handleOpenNotepad = () => setIsNotepadOpen(true);
-  const handleCloseNotepad = () => setIsNotepadOpen(false);
-  const handleOpenRoomModal = () => setIsRoomModalOpen(true);
-  const handleCloseRoomModal = () => setIsRoomModalOpen(false);
-  const handleOpenTelegramModal = () => setIsTelegramModalOpen(true);
-  const handleCloseTelegramModal = () => setIsTelegramModalOpen(false);
-  
-  const handleSaveTelegramCredentials = (token: string, recipients: TelegramRecipient[]) => {
-      const creds = { token, recipients };
-      setTelegramCredentials(creds);
-      localStorage.setItem(TELEGRAM_CREDS_KEY, JSON.stringify(creds));
-  };
-  
-  const sendTelegram = useCallback(async (text: string, chatId: string): Promise<{success: boolean, message: string}> => {
-        if (!telegramCredentials?.token) {
-            handleOpenTelegramModal();
-            return {success: false, message: 'Telegram Bot Token not configured.'};
-        }
-        const success = await sendTelegramMessage(telegramCredentials.token, chatId, text);
-        return success 
-            ? {success: true, message: 'Message sent.'} 
-            : {success: false, message: 'Failed to send.'};
-    }, [telegramCredentials]);
-
-  const handleSelectConversation = (id: string) => {
-    setActiveRoomId(null);
-    setActiveConversationId(id);
-  };
-  
-  const handleSelectRoom = (id: string) => {
-    setActiveConversationId(null);
-    setActiveRoomId(id);
-  };
-
-  const handleCreateRoom = async (customCode?: string): Promise<string> => {
-    const roomCode = await createRoom(userId, customCode);
-    handleSelectRoom(roomCode);
-    return roomCode;
-  };
-  
-  const handleJoinRoom = async (roomCode: string) => {
-    await joinRoom(roomCode, userId);
-    handleSelectRoom(roomCode);
-  };
+      localStorage.setItem(`${FOLDERS_KEY_PREFIX}${userId}`, JSON.stringify(folders));
+  }, [conversations, folders, userId]);
 
   const handleSendMessage = async (prompt: string) => {
     if (!activeConversationId) return;
@@ -241,10 +161,10 @@ const App: React.FC = () => {
     setConversations(prev => prev.map(c => c.id === activeConversationId ? { ...c, messages: [...c.messages, userMessage, modelMessage] } : c));
 
     try {
-      const chatSession = conversations.find(c => c.id === activeConversationId)?.chatSession;
-      if (!chatSession) throw new Error("Chat session not found");
+      const activeConvo = conversations.find(c => c.id === activeConversationId);
+      if (!activeConvo) throw new Error("Chat session not found");
 
-      const stream = await sendMessageStream(chatSession, prompt);
+      const stream = await sendMessageStream(activeConvo.chatSession, prompt);
       
       for await (const chunk of stream) {
         setConversations(prev => prev.map(c => {
@@ -258,80 +178,122 @@ const App: React.FC = () => {
         }));
       }
     } catch (error) {
-      setConversations(prev => prev.map(c => c.id === activeConversationId ? { ...c, messages: c.messages.map(msg => msg.id === modelMessage.id ? { ...msg, content: 'Sorry, I encountered an error.' } : msg) } : c));
+      setConversations(prev => prev.map(c => c.id === activeConversationId ? { ...c, messages: c.messages.map(msg => msg.id === modelMessage.id ? { ...msg, content: 'Encountered a problem. Please check your connection.' } : msg) } : c));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSendRoomMessage = async (text: string) => {
-      if (!activeRoomId) return;
-      await sendFirebaseRoomMessage(activeRoomId, { senderId: userId, text });
-  };
-  
-  const handleAskAiInRoom = async (text: string) => {
-      if (!activeRoomId) return;
-      // Optimistic update handled by listener, but we show loading
-      await sendFirebaseRoomMessage(activeRoomId, { senderId: userId, text: `/ask ${text}` });
-
-      try {
-        const { text: responseText, groundingMetadata } = await askQuestion(text);
-        await sendFirebaseRoomMessage(activeRoomId, {
-            senderId: 'PixelBot',
-            text: responseText,
-            groundingMetadata: groundingMetadata
-        });
-      } catch (error) {
-         await sendFirebaseRoomMessage(activeRoomId, { senderId: 'PixelBot', text: "Sorry, I couldn't answer that question." });
-      }
+  const handleSimplify = (content: string) => {
+      handleSendMessage(`Can you explain this again, but the 'Easy Way'? Keep it simple for a student. Reference: ${content.substring(0, 100)}...`);
   };
 
-  const handleToggleReaction = async (messageId: string, emoji: string) => {
-    if (!activeRoomId) return;
-    await toggleFirebaseReaction(activeRoomId, messageId, emoji, userId);
+  const handleAddToFolderTrigger = (content: string) => {
+      setPendingSaveContent(content);
+      setIsAddToFolderModalOpen(true);
+  };
+
+  const handleSaveToFolder = (folderName: string) => {
+      if (!pendingSaveContent) return;
+
+      const activeConvo = conversations.find(c => c.id === activeConversationId);
+      const sourceTitle = activeConvo?.title || "Untitled Chat";
+
+      setFolders(prev => {
+          const existing = prev.find(f => f.name.toLowerCase() === folderName.toLowerCase());
+          const newItem: SavedItem = { 
+              id: Date.now().toString(), 
+              content: pendingSaveContent, 
+              timestamp: Date.now(), 
+              sourceTitle 
+          };
+          
+          if (existing) {
+              return prev.map(f => f.id === existing.id ? { ...f, items: [newItem, ...f.items] } : f);
+          } else {
+              return [...prev, { id: Date.now().toString(), name: folderName, items: [newItem] }];
+          }
+      });
+      setPendingSaveContent(null);
+  };
+
+  const handleDeleteFolderItem = (folderId: string, itemId: string) => {
+      setFolders(prev => prev.map(f => f.id === folderId ? { ...f, items: f.items.filter(i => i.id !== itemId) } : f));
+  };
+
+  const handleSelectFolder = (folder: Folder) => {
+      setActiveFolderId(folder.id);
+      setActiveConversationId(null);
+      setActiveRoomId(null);
+  };
+
+  const handleSelectConversation = (id: string) => {
+      setActiveConversationId(id);
+      setActiveFolderId(null);
+      setActiveRoomId(null);
+  };
+
+  const handleSelectRoom = (id: string) => {
+      setActiveRoomId(id);
+      setActiveConversationId(null);
+      setActiveFolderId(null);
   };
 
   const activeConversation = conversations.find(c => c.id === activeConversationId);
-  // Construct the active room object by combining metadata + real-time messages
   const activeRoomMetadata = rooms.find(r => r.id === activeRoomId);
   const activeRoom: Room | undefined = activeRoomMetadata ? { ...activeRoomMetadata, messages: roomMessages } : undefined;
+  const activeFolder = folders.find(f => f.id === activeFolderId);
 
   if (initializationError) return <div className="flex h-screen w-screen items-center justify-center p-10 text-red-600 bg-red-50 text-center font-bold text-xl">{initializationError}</div>;
 
   return (
-    <div className="h-screen w-screen flex overflow-hidden">
-        <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-[280px]' : 'w-0'}`}>
+    <div className="h-screen w-screen flex overflow-hidden font-sans bg-[#F9F9F9]">
+        <div className={`transition-all duration-300 ease-in-out h-full overflow-hidden ${isSidebarOpen ? 'w-[280px]' : 'w-0'}`}>
           <Sidebar
             conversations={conversations}
             rooms={rooms}
+            folders={folders}
             activeConversationId={activeConversationId}
             activeRoomId={activeRoomId}
-            onToggle={toggleSidebar}
+            onToggle={() => setIsSidebarOpen(false)}
             onNewChat={handleNewChat}
             onSelectConversation={handleSelectConversation}
             onSelectRoom={handleSelectRoom}
-            onOpenNotepad={handleOpenNotepad}
-            onOpenRoomModal={handleOpenRoomModal}
-            onOpenTelegramModal={handleOpenTelegramModal}
+            onSelectFolder={handleSelectFolder}
+            onOpenNotepad={() => setIsNotepadOpen(true)}
+            onOpenRoomModal={() => setIsRoomModalOpen(true)}
+            onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
+            onOpenStudyTools={(f, t) => { setStudyToolConfig({ folder: f, type: t }); setIsStudyToolsOpen(true); }}
+            onDeleteFolder={(id) => setFolders(prev => prev.filter(f => f.id !== id))}
           />
         </div>
 
         {!isSidebarOpen && (
-          <button onClick={toggleSidebar} className="absolute top-5 left-4 z-10 p-1.5 text-gray-500 hover:bg-gray-100 rounded-md">
-            <MenuIcon className="w-5 h-5" />
+          <button 
+            onClick={() => setIsSidebarOpen(true)} 
+            className="fixed top-5 left-5 z-[100] p-4 text-indigo-600 bg-white/80 backdrop-blur-md shadow-2xl border border-indigo-50 rounded-2xl hover:bg-white hover:scale-110 transition-all flex items-center justify-center animate-fade-in group"
+            title="Open Study Sidebar"
+          >
+            <MenuIcon className="w-6 h-6 group-hover:rotate-180 transition-transform duration-500" />
           </button>
         )}
 
-        <main className="flex-1 flex flex-col bg-[#F9F9F9] relative">
+        <main className="flex-1 flex flex-col bg-white relative">
           {activeConversation && (
             <ChatView
               key={activeConversation.id}
               conversation={activeConversation}
               onSendMessage={handleSendMessage}
+              onSimplify={handleSimplify}
+              onAddToFolder={handleAddToFolderTrigger}
               isLoading={isLoading}
               isSidebarOpen={isSidebarOpen}
               telegramCredentials={telegramCredentials}
-              onSendTelegram={sendTelegram}
+              onSendTelegram={async (text, chatId) => {
+                  if (!telegramCredentials?.token) return { success: false, message: 'Bot Token missing.' };
+                  const ok = await sendTelegramMessage(telegramCredentials.token, chatId, text);
+                  return { success: ok, message: ok ? 'Sent!' : 'Failed.' };
+              }}
             />
           )}
           {activeRoom && (
@@ -339,23 +301,45 @@ const App: React.FC = () => {
               key={activeRoom.id}
               room={activeRoom}
               currentUserId={userId}
-              onSendMessage={handleSendRoomMessage}
-              onAskAi={handleAskAiInRoom}
-              onToggleReaction={handleToggleReaction}
+              onSendMessage={async (text) => await sendFirebaseRoomMessage(activeRoom.id, { senderId: userId, text })}
+              onAskAi={async (text) => {
+                  await sendFirebaseRoomMessage(activeRoom.id, { senderId: userId, text: `/ask ${text}` });
+                  const { text: res, groundingMetadata } = await askQuestion(text);
+                  await sendFirebaseRoomMessage(activeRoom.id, { senderId: 'PixelBot', text: res, groundingMetadata });
+              }}
+              onToggleReaction={async (mid, emoji) => await toggleFirebaseReaction(activeRoom.id, mid, emoji, userId)}
               isLoading={isLoading}
               isSidebarOpen={isSidebarOpen}
             />
           )}
-          {activeRoomId && !activeRoom && (
-             <div className="flex items-center justify-center h-full text-gray-500">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mr-2"></div>
-                <span>Syncing Room...</span>
-             </div>
+          {activeFolder && (
+            <FolderView 
+                folder={activeFolder} 
+                onClose={() => setActiveFolderId(null)} 
+                onDeleteItem={(itemId) => handleDeleteFolderItem(activeFolder.id, itemId)}
+            />
           )}
         </main>
-      <NotepadModal isOpen={isNotepadOpen} onClose={handleCloseNotepad} notes={notes} onUpdateNotes={setNotes} />
-      <RoomModal isOpen={isRoomModalOpen} onClose={handleCloseRoomModal} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />
-      <TelegramModal isOpen={isTelegramModalOpen} onClose={handleCloseTelegramModal} onSave={handleSaveTelegramCredentials} initialToken={telegramCredentials?.token} initialRecipients={telegramCredentials?.recipients} />
+
+      <NotepadModal isOpen={isNotepadOpen} onClose={() => setIsNotepadOpen(false)} notes={notes} onUpdateNotes={setNotes} />
+      <RoomModal isOpen={isRoomModalOpen} onClose={() => setIsRoomModalOpen(false)} onCreateRoom={async (code) => await createRoom(userId, code)} onJoinRoom={async (code) => await joinRoom(code, userId)} />
+      <TelegramModal isOpen={isTelegramModalOpen} onClose={() => setIsTelegramModalOpen(false)} onSave={(t, r) => { setTelegramCredentials({ token: t, recipients: r }); localStorage.setItem(TELEGRAM_CREDS_KEY, JSON.stringify({ token: t, recipients: r })); }} initialToken={telegramCredentials?.token} initialRecipients={telegramCredentials?.recipients} />
+      
+      {studyToolConfig && (
+        <StudyToolsModal 
+            isOpen={isStudyToolsOpen} 
+            onClose={() => setIsStudyToolsOpen(false)} 
+            folder={studyToolConfig.folder} 
+            type={studyToolConfig.type} 
+        />
+      )}
+
+      <AddToFolderModal 
+        isOpen={isAddToFolderModalOpen}
+        onClose={() => setIsAddToFolderModalOpen(false)}
+        folders={folders}
+        onConfirm={handleSaveToFolder}
+      />
     </div>
   );
 };

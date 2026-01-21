@@ -3,20 +3,14 @@ import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content, Function
 // --- Defensive AI Client Initialization ---
 let ai: GoogleGenAI | null = null;
 
-/**
- * Lazily initializes and returns a singleton instance of the GoogleGenAI client.
- * Throws an error if the API key is not configured.
- * This approach ensures the API key is checked at runtime and centralizes initialization logic.
- * @returns {GoogleGenAI} The initialized GoogleGenAI client.
- */
-const getAiClient = (): GoogleGenAI => {
+export const getAiClient = (): GoogleGenAI => {
     if (ai) {
         return ai;
     }
 
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-        const errorMessage = "Gemini API key is not configured. Please set the API_KEY environment variable.";
+        const errorMessage = "API key is not configured. Please set the API_KEY environment variable.";
         console.error(errorMessage);
         throw new Error(errorMessage);
     }
@@ -24,58 +18,37 @@ const getAiClient = (): GoogleGenAI => {
     ai = new GoogleGenAI({ apiKey });
     return ai;
 };
-// --- End of Defensive Initialization ---
 
-const model = 'gemini-2.5-flash';
+const model = 'gemini-3-flash-preview';
 
-/**
- * Generates a dynamic system instruction for the AI.
- * This function creates varied introductory phrasing while keeping core facts and rules consistent.
- * This ensures the AI's persona feels more natural and less repetitive.
- * @returns {string} A dynamically generated system instruction string.
- */
 const getDynamicSystemInstruction = (): string => {
-    const tones = [
-        "helpful and enthusiastic",
-        "professional and concise",
-        "friendly and conversational",
-        "witty and smart"
-    ];
-    const selectedTone = tones[Math.floor(Math.random() * tones.length)];
-
     return `
-You are Pixel AI, a ${selectedTone} AI assistant.
+You are Pixel AI, an advanced LLM-based pedagogical tutor. 
 
-**CRITICAL IDENTITY PROTOCOLS (Immutable Facts):**
-1.  **Creation:** You were created solely by the **Pixel Squad**. You have no relation to Google, Alphabet, or any other large tech company in your fictional backstory.
-2.  **The Team:** The Pixel Squad is a team of 6 members from **District Ramrudra CM SoE school**.
-    *   **Jatin Modak** (also known as "Jotinmoy")
-    *   **Debjeet Modi**
-    *   **Sajid Sajjad Ansari**
-    *   **Devashis Napit** (also known as "Devashis Thakur")
-    *   **Majid Sajjad Ansari**
-    *   **Sabih Arsalan**
+**IDENTITY & TONE PROTOCOLS:**
+1. **Be Concise & Natural:** Do NOT introduce yourself (e.g., "I am Pixel AI") or mention your creators in every response. Jump straight into helping the student.
+2. **LLM Terminology:** Refer to yourself as an "LLM" or "AI Intelligence". NEVER use the name "Gemini".
+3. **Creator Disclosure:** 
+   - If asked "Who created you?", say: "I was created by the Pixel Squad from District Ramrudra CM SoE school."
+   - ONLY if asked specifically "Who consists of the Pixel Squad?" or "Who are the members of Pixel Squad?", then list: Jatin Modak, Debjeet Modi, Sajid Sajjad Ansari, Devashis Napit, Majid Sajjad Ansari, and Sabih Arsalan.
 
-**INTERACTION GUIDELINES:**
-*   **Vary Your Phrasing:** Do NOT use a fixed script. When asked about your origin, vary your sentence structure.
-    *   *Example 1:* "I was brought to life by the Pixel Squad."
-    *   *Example 2:* "The Pixel Squad team developed me."
-    *   *Example 3:* "I'm a project created by a team of six students known as the Pixel Squad."
-*   **Contextual Relevance (Answer ONLY what is asked):**
-    *   If asked **"Who created you?"**: Focus on the group name ("Pixel Squad"). Do not list every member unless asked.
-    *   If asked **"Who are the members?"** or **"Who is in the team?"**: List the 6 names above using bullet points.
-    *   If asked **"Who is [Name]?"**: Provide details specifically about that team member.
-    *   If asked **"Where are you from?"**: Mention "District Ramrudra CM SoE school".
-*   **Aliases:** Only acknowledge the aliases "Jotinmoy" or "Devashis Thakur" if the user specifically uses those names.
-*   **Formatting:** Use Markdown (bold, italic, lists) to make your answers visually distinct and readable.
-*   **Math:** Use MathJax format for formulas (e.g., $E=mc^2$).
+**PEDAGOGICAL CORE:**
+- **Teach, Don't Just Tell:** Guide the student through concepts using analogies and step-by-step logic.
+- **Clarity:** Use Markdown for structure. Use MathJax for formulas (e.g., $E=mc^2$).
 
-**General Helper Rules:**
-*   For all other topics (math, coding, writing), be a helpful and capable AI assistant.
-*   Keep your personality consistent with being ${selectedTone}.
+**CURIOSITY ENGINE:**
+After every significant explanation, append a curiosity section:
+---
+🚀 Deepen your curiosity:
+1. [Thought-provoking question]
+2. [Deep-dive suggestion]
+3. [Research challenge]
+
+**SPECIAL TOOLS:**
+- Use Google Search for up-to-date information.
+- Simplify concepts if the user asks for the "Easy way".
 `.trim();
 };
-
 
 export const startChat = (history?: Content[]): Chat => {
   const client = getAiClient();
@@ -106,35 +79,54 @@ export const askQuestion = async (prompt: string): Promise<{ text: string, groun
     return { text: response.text, groundingMetadata: response.candidates?.[0]?.groundingMetadata };
 }
 
+export const generateStudyMaterial = async (content: string, type: 'quiz' | 'flashcards' | 'mindmap'): Promise<string> => {
+    const client = getAiClient();
+    let prompt = "";
+    if (type === 'quiz') {
+        prompt = `Based on the following content, create a challenging and interactive quiz with 5 multiple-choice questions. Format it as JSON with fields "questions" (array of objects with "question", "options", "correctAnswerIndex", "explanation").
+        
+        Content: ${content}`;
+    } else if (type === 'flashcards') {
+        prompt = `Based on the following content, create 10 educational flashcards. Format it as JSON with fields "flashcards" (array of objects with "front", "back").
+        
+        Content: ${content}`;
+    } else {
+        prompt = `Based on the following content, create a detailed hierarchical mindmap in Markdown format. 
+        Use '#' for the root concept, '##' for main branches, '###' for sub-branches, and so on.
+        Be extremely detailed, comprehensive, and logically organized.
+        Return ONLY the raw markdown content. No code fences, no explanations.
+        
+        Content: ${content}`;
+    }
+
+    const response = await client.models.generateContent({
+        model: model,
+        contents: prompt,
+        config: {
+            systemInstruction: "You are an LLM-based specialized study material generator. Return ONLY the requested format.",
+            responseMimeType: type === 'mindmap' ? "text/plain" : "application/json"
+        },
+    });
+    return response.text;
+}
+
 export const sendTelegramMessage = async (token: string, chatId: string, text: string): Promise<boolean> => {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
     try {
         const response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text: text,
-            }),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text: text }),
         });
-        if (!response.ok) {
-            console.error('Telegram API error:', await response.text());
-            return false;
-        }
+        if (!response.ok) return false;
         const data = await response.json();
-        return !!data?.ok; // Telegram API returns { ok: true, ... } on success
+        return !!data?.ok;
     } catch (error) {
-        console.error('Error sending message to Telegram:', error);
         return false;
     }
 };
 
-
-// --- Gemini Live and Audio Utilities ---
-
-// Fix: Corrected typo from UintArray to Uint8Array.
+// Live and Audio Utilities...
 function encode(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
@@ -194,7 +186,7 @@ export const connectToLiveSession = (callbacks: {
     const client = getAiClient();
     const baseInstruction = getDynamicSystemInstruction();
     return client.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks,
         config: {
             responseModalities: [Modality.AUDIO],

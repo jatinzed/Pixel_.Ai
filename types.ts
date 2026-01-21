@@ -27,6 +27,20 @@ export interface Conversation {
   chatSession: Chat;
 }
 
+// Types for Folders and Study
+export interface SavedItem {
+  id: string;
+  content: string;
+  timestamp: number;
+  sourceTitle: string;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  items: SavedItem[];
+}
+
 // Types for Chat Rooms
 export interface Reaction {
   [emoji: string]: string[]; // emoji: array of user IDs
