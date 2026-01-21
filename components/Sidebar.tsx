@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { 
     PlusIcon, 
@@ -10,7 +11,9 @@ import {
     DotsHorizontalIcon,
     FolderPlusIcon,
     LibraryIcon,
-    LightbulbIcon
+    LightbulbIcon,
+    // Add missing icon import
+    CheckCircleIcon
 } from './Icons';
 import { Conversation, Room, TopicFolder } from '../types';
 
@@ -75,16 +78,85 @@ const Sidebar: React.FC<SidebarProps> = ({
                   className="p-3 bg-gray-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition border border-indigo-50">
                     <LibraryIcon className="w-6 h-6" />
                 </button>
-                <button 
-                  onClick={onOpenTelegramModal}
-                  className="p-3 bg-gray-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition border border-indigo-50">
-                    <PaperAirplaneIcon className="w-6 h-6" />
-                </button>
             </div>
             
             <div className="flex-1 overflow-y-auto -mr-4 pr-4">
+                {/* Study Topics Section - The primary study hub */}
+                <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 mb-3">Study Library</h2>
+                <ul className="space-y-1 mb-8">
+                    {folders.length === 0 && (
+                        <p className="px-4 text-xs text-gray-400 italic">No topics saved yet.</p>
+                    )}
+                    {folders.map((folder) => (
+                        <li 
+                            key={folder.id}
+                            className={`group relative flex items-center justify-between p-2 px-4 rounded-full transition-colors ${openMenuId === folder.id ? 'bg-indigo-50' : 'text-gray-600 hover:bg-gray-50'}`}
+                        >
+                            <div 
+                                onClick={onOpenNotepad}
+                                className="flex items-center space-x-3 truncate cursor-pointer flex-1"
+                            >
+                                <FolderPlusIcon className={`w-4 h-4 flex-shrink-0 ${openMenuId === folder.id ? 'text-indigo-600' : 'text-indigo-400'}`} />
+                                <span className={`text-sm font-bold truncate ${openMenuId === folder.id ? 'text-indigo-800' : 'text-gray-700'}`}>{folder.name}</span>
+                            </div>
+                            
+                            <div className="relative">
+                                <button 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setOpenMenuId(openMenuId === folder.id ? null : folder.id);
+                                    }}
+                                    className="p-1.5 rounded-full hover:bg-white text-gray-400 group-hover:text-indigo-600 transition-colors shadow-none hover:shadow-sm"
+                                >
+                                    <DotsHorizontalIcon className="w-4 h-4" />
+                                </button>
+
+                                {openMenuId === folder.id && (
+                                    <>
+                                        <div 
+                                            className="fixed inset-0 z-[60]" 
+                                            onClick={() => setOpenMenuId(null)}
+                                        />
+                                        <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-gray-100 py-2 z-[70] overflow-hidden animate-fade-in origin-top-right">
+                                            <div className="px-4 py-2 border-b border-gray-50 mb-1">
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Study Actions</p>
+                                            </div>
+                                            <button 
+                                                onClick={() => {
+                                                    onGenerateFlashcards(folder.id);
+                                                    setOpenMenuId(null);
+                                                }}
+                                                disabled={folder.snippets.length === 0}
+                                                className="w-full text-left px-4 py-3 text-xs font-bold text-gray-700 hover:bg-amber-50 hover:text-amber-700 flex items-center gap-3 transition-colors disabled:opacity-40"
+                                            >
+                                                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                                                    <LightbulbIcon className="w-4 h-4 text-amber-600" />
+                                                </div>
+                                                Create Flashcards
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    onGenerateQuiz(folder.id);
+                                                    setOpenMenuId(null);
+                                                }}
+                                                disabled={folder.snippets.length === 0}
+                                                className="w-full text-left px-4 py-3 text-xs font-bold text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-3 transition-colors disabled:opacity-40"
+                                            >
+                                                <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                                                    <CheckCircleIcon className="w-4 h-4 text-green-600" />
+                                                </div>
+                                                Practice Quiz
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+
                 {/* Conversations Section */}
-                <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 mb-3">Chats</h2>
+                <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 mb-3">Recent Chats</h2>
                 <ul className="space-y-1 mb-8">
                     {conversations.map((convo) => (
                         <li 
@@ -104,71 +176,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     ))}
                 </ul>
 
-                {/* Study Topics Section */}
-                <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 mb-3">Study Topics</h2>
-                <ul className="space-y-1 mb-8">
-                    {folders.map((folder) => (
-                        <li 
-                            key={folder.id}
-                            className="group relative flex items-center justify-between p-2 px-4 rounded-full text-gray-600 hover:bg-indigo-50 transition-colors"
-                        >
-                            <div 
-                                onClick={onOpenNotepad}
-                                className="flex items-center space-x-3 truncate cursor-pointer flex-1"
-                            >
-                                <FolderPlusIcon className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-                                <span className="text-sm font-bold truncate">{folder.name}</span>
-                            </div>
-                            
-                            {/* Three Dots Menu */}
-                            <div className="relative">
-                                <button 
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setOpenMenuId(openMenuId === folder.id ? null : folder.id);
-                                    }}
-                                    className="p-1 rounded-full hover:bg-indigo-100 text-gray-400 group-hover:text-indigo-600 transition-colors"
-                                >
-                                    <DotsHorizontalIcon className="w-4 h-4" />
-                                </button>
-
-                                {openMenuId === folder.id && (
-                                    <>
-                                        <div 
-                                            className="fixed inset-0 z-10" 
-                                            onClick={() => setOpenMenuId(null)}
-                                        />
-                                        <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-20 overflow-hidden">
-                                            <button 
-                                                onClick={() => {
-                                                    onGenerateFlashcards(folder.id);
-                                                    setOpenMenuId(null);
-                                                }}
-                                                className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2"
-                                            >
-                                                <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                                Create Flashcards
-                                            </button>
-                                            <button 
-                                                onClick={() => {
-                                                    onGenerateQuiz(folder.id);
-                                                    setOpenMenuId(null);
-                                                }}
-                                                className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2"
-                                            >
-                                                <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                                                Create Quiz
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        </li>
-                    ))}
-                </ul>
-
                 {/* Rooms Section */}
-                <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 mb-3">Chat Rooms</h2>
+                <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 mb-3">Study Rooms</h2>
                  <div className="flex flex-col space-y-1 mb-4">
                     <button onClick={onOpenRoomModal} className="w-full text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 py-2.5 px-4 rounded-full flex items-center space-x-2 transition-all">
                         <PlusCircleIcon className="w-4 h-4"/>

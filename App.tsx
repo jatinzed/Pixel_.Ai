@@ -10,7 +10,6 @@ import TopicSelectorModal from './components/TopicSelectorModal';
 import StudyToolModal from './components/StudyToolModal';
 import { MenuIcon } from './components/Icons';
 import { Conversation, Message, Room, RoomMessage, TelegramCredentials, TelegramRecipient, Note, TopicFolder, SavedSnippet } from './types';
-// Fixed error on line 12 by ensuring sendTelegramMessage is correctly exported from geminiService
 import { startChat, sendMessageStream, askQuestion, sendTelegramMessage, generateFlashcards, generateQuiz } from './services/geminiService';
 import { 
     login, 
@@ -39,15 +38,14 @@ const App: React.FC = () => {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false); // New state for study tools
   const [isNotepadOpen, setIsNotepadOpen] = useState(false);
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
   
-  // Topic Selector Logic
   const [isTopicSelectorOpen, setIsTopicSelectorOpen] = useState(false);
   const [contentToSave, setContentToSave] = useState<string | null>(null);
 
-  // Study Tools Logic
   const [studyToolState, setStudyToolState] = useState<{ type: 'flashcards' | 'quiz', data: any[], folderName: string } | null>(null);
 
   const [userId, setUserId] = useState<string>('');
@@ -57,7 +55,6 @@ const App: React.FC = () => {
   const [telegramCredentials, setTelegramCredentials] = useState<TelegramCredentials | null>(null);
   const [initializationError, setInitializationError] = useState<string | null>(null);
 
-  // 1. Initialize Firebase Auth
   useEffect(() => {
     const initAuth = async () => {
         try {
@@ -76,7 +73,6 @@ const App: React.FC = () => {
     initAuth();
   }, []);
 
-  // 2. Listen to User's Rooms
   useEffect(() => {
     if (!userId) return;
     try {
@@ -89,7 +85,6 @@ const App: React.FC = () => {
     }
   }, [userId]);
 
-  // 3. Listen to Active Room Messages
   useEffect(() => {
       if (!activeRoomId) {
           setRoomMessages([]);
@@ -122,7 +117,6 @@ const App: React.FC = () => {
     }
   }, [initializationError]);
 
-  // Load/Save Data
   useEffect(() => {
       if (!userId) return;
       
@@ -149,7 +143,6 @@ const App: React.FC = () => {
           try { setFolders(JSON.parse(savedFolders)); } catch (e) {}
       }
 
-      // Load Telegram Credentials from storage
       const savedTelegram = localStorage.getItem(TELEGRAM_CREDS_KEY);
       if (savedTelegram) {
           try { setTelegramCredentials(JSON.parse(savedTelegram)); } catch (e) {}
@@ -251,28 +244,28 @@ const App: React.FC = () => {
   const onGenerateFlashcardsAction = async (folderId: string) => {
       const folder = folders.find(f => f.id === folderId);
       if (!folder || folder.snippets.length === 0) return;
-      setIsLoading(true);
+      setIsGenerating(true);
       try {
           const cards = await generateFlashcards(folder.snippets.map(s => s.content));
           setStudyToolState({ type: 'flashcards', data: cards, folderName: folder.name });
       } catch (e) {
           console.error(e);
       } finally {
-          setIsLoading(false);
+          setIsGenerating(false);
       }
   };
 
   const onGenerateQuizAction = async (folderId: string) => {
       const folder = folders.find(f => f.id === folderId);
       if (!folder || folder.snippets.length === 0) return;
-      setIsLoading(true);
+      setIsGenerating(true);
       try {
           const quiz = await generateQuiz(folder.snippets.map(s => s.content));
           setStudyToolState({ type: 'quiz', data: quiz, folderName: folder.name });
       } catch (e) {
           console.error(e);
       } finally {
-          setIsLoading(false);
+          setIsGenerating(false);
       }
   };
 
@@ -299,7 +292,7 @@ const App: React.FC = () => {
   if (initializationError) return <div className="flex h-screen w-screen items-center justify-center p-10 text-red-600 bg-red-50 text-center font-bold text-xl">{initializationError}</div>;
 
   return (
-    <div className="h-screen w-screen flex overflow-hidden">
+    <div className="h-screen w-screen flex overflow-hidden relative">
         <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-[280px]' : 'w-0'}`}>
           <Sidebar
             conversations={conversations}
@@ -313,7 +306,7 @@ const App: React.FC = () => {
             onSelectRoom={handleSelectRoom}
             onOpenNotepad={() => setIsNotepadOpen(true)}
             onOpenRoomModal={() => setIsRoomModalOpen(true)}
-            onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
+            onOpenTelegramModal={() => setIsTelegramModalOpen(false)}
             onGenerateFlashcards={onGenerateFlashcardsAction}
             onGenerateQuiz={onGenerateQuizAction}
           />
@@ -360,6 +353,16 @@ const App: React.FC = () => {
              </div>
           )}
         </main>
+        
+      {/* Overlay for Study Tool Generation */}
+      {isGenerating && (
+          <div className="fixed inset-0 bg-white/60 backdrop-blur-md z-[100] flex flex-col items-center justify-center animate-fade-in">
+              <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-6"></div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Creating Study Guide</h2>
+              <p className="text-gray-500 max-w-xs text-center font-medium">Pixel AI is analyzing your saved snippets to generate high-quality interactive content...</p>
+          </div>
+      )}
+
       <NotepadModal isOpen={isNotepadOpen} onClose={() => setIsNotepadOpen(false)} notes={notes} onUpdateNotes={setNotes} folders={folders} onUpdateFolders={setFolders} />
       <RoomModal isOpen={isRoomModalOpen} onClose={() => setIsRoomModalOpen(false)} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />
       <TelegramModal 
