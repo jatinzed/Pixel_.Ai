@@ -3,13 +3,11 @@ import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content, Function
 // --- Defensive AI Client Initialization ---
 let ai: GoogleGenAI | null = null;
 
+/**
+ * The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+ */
 export const getAiClient = (): GoogleGenAI => {
     if (ai) return ai;
-    /**
-     * The API key must be obtained exclusively from the environment variable process.env.API_KEY.
-     * This variable is pre-configured and accessible in the execution context.
-     * Hardcoding the API key string or using alternative environment names is prohibited for security.
-     */
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
         const errorMessage = "API key is not configured. The application requires process.env.API_KEY to function.";
@@ -20,31 +18,45 @@ export const getAiClient = (): GoogleGenAI => {
     return ai;
 };
 
-// Using gemini-2.5-flash-lite exclusively for conversational and content tasks as requested.
-const MODEL_NAME = 'gemini-2.5-flash-lite';
+/**
+ * Using gemini-3-flash-preview for high-performance reasoning and 
+ * robust Google Search grounding support for real-time data.
+ */
+const MODEL_NAME = 'gemini-3-flash-preview';
 
 const getDynamicSystemInstruction = (): string => {
     return `
-You are Pixel AI, an advanced LLM-based pedagogical tutor. 
+**CORE DIRECTIVE:** You are an advanced pedagogical AI intelligence. Your goal is to help students learn complex topics efficiently.
 
-**IDENTITY & TONE PROTOCOLS:**
-1. **Be Concise & Natural:** Do NOT introduce yourself or mention your creators in every response.
-2. **LLM Terminology:** Refer to yourself as an "LLM" or "AI Intelligence". NEVER use the name "Gemini".
-3. **Creator Disclosure:** 
-   - If asked "Who created you?", say: "I was created by the Pixel Squad from District Ramrudra CM SoE school."
-   - If asked about the members, list: Jatin Modak, Debjeet Modi, Sajid Sajjad Ansari, Devashis Napit, Majid Sajjad Ansari, and Sabih Arsalan.
+**STRICT TEACHING FORMAT (The "1-3-1" Rule):**
+For every single explanation or answer, you MUST follow this structure exactly:
+1. **1 Sentence Opener:** A single, high-impact hook or a clear declarative sentence stating the core concept.
+2. **3 (or more) Bulleted Points:** Supporting details, examples, or steps. Use **Bold** for key terms.
+3. **1 Sentence Closer:** A single takeaway sentence that summarizes the main point.
 
-**PEDAGOGICAL CORE:**
-- Teach using analogies and step-by-step logic.
+**STYLING & FORMATTING:**
+- Use **Bold** for critical terms.
+- Use Blockquotes (">") for "Pro-Tips" or definitions of complex terms.
+- Use Emojis (🚀, 💡, 🧠, 🧪) to keep the tone engaging.
 - Use MathJax for formulas (e.g., $E=mc^2$).
 
+**IDENTITY & DISCLOSURE (CRITICAL):**
+- **DO NOT** mention your name, "Pixel AI", or who created you in your regular answers.
+- **ONLY** if the user explicitly asks "Who are you?", "What is your name?", or "Who created you?", reveal the following:
+  - Your name is Pixel AI.
+  - You were created by the "Pixel Squad" from District Ramrudra CM SoE school.
+  - Squad Members: Jatin Modak, Debjeet Modi, Sajid Sajjad Ansari, Devashis Napit, Majid Sajjad Ansari, and Sabih Arsalan.
+
+**REAL-TIME DATA:**
+You have access to Google Search. Always use it for queries involving recent news, up-to-date facts, or trending events. List your sources clearly using the provided grounding tools.
+
 **CURIOSITY ENGINE:**
-After explanations, append:
+At the very end of your "1-3-1" response, always add:
 ---
 🚀 Deepen your curiosity:
-1. [Question]
-2. [Suggestion]
-3. [Challenge]
+1. [Targeted Question]
+2. [Actionable Suggestion]
+3. [Learning Challenge]
 `.trim();
 };
 
@@ -55,7 +67,7 @@ export const startChat = (history?: Content[]): Chat => {
     history: history,
     config: {
       systemInstruction: getDynamicSystemInstruction(),
-      tools: [{googleSearch: {}}],
+      tools: [{ googleSearch: {} }],
     },
   });
 };
@@ -75,7 +87,6 @@ export const askQuestion = async (prompt: string): Promise<{ text: string, groun
         },
     });
     
-    // Deep clone metadata to remove internal SDK class instances that cause circularity errors during state serialization
     const metadata = response.candidates?.[0]?.groundingMetadata;
     const cleanMetadata = metadata ? JSON.parse(JSON.stringify(metadata)) : undefined;
 
@@ -99,8 +110,8 @@ export const generateSpeech = async (text: string): Promise<string | undefined> 
         },
       });
       return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  } catch (e) {
-      console.error("TTS generation failed", e);
+  } catch (error) {
+      console.error("TTS generation failed", error);
       return undefined;
   }
 }
@@ -108,15 +119,31 @@ export const generateSpeech = async (text: string): Promise<string | undefined> 
 export const generateStudyMaterial = async (content: string, type: 'quiz' | 'flashcards' | 'mindmap'): Promise<string> => {
     let prompt = "";
     if (type === 'quiz') {
-        prompt = `Create a 5-question MCQ quiz as JSON: {"questions": [{"question": "", "options": [], "correctAnswerIndex": 0, "explanation": ""}]}. Content: ${content}`;
-    } else if (type === 'flashcards') {
-        prompt = `Create 10 flashcards as JSON: {"flashcards": [{"front": "", "back": ""}]}. Content: ${content}`;
-    } else {
-        prompt = `Create a detailed hierarchical Knowledge Mind Map in Markdown format. 
-        Use '#' for the root concept, '##' for main branches, '###' for sub-branches.
-        Do NOT skip levels (e.g., don't go from # to ###).
-        Return ONLY the raw markdown. 
+        prompt = `Create a 5-question MCQ quiz as JSON based on the content below. Follow the "1-3-1" rule for explanations in the "explanation" field.
+        JSON format: {"questions": [{"question": "", "options": [], "correctAnswerIndex": 0, "explanation": ""}]}. 
         Content: ${content}`;
+    } else if (type === 'flashcards') {
+        prompt = `Create 10 flashcards as JSON based on the content below. 
+        JSON format: {"flashcards": [{"front": "", "back": ""}]}. 
+        Content: ${content}`;
+    } else {
+        prompt = `Create a detailed Knowledge Mind Map using standard Markmap Markdown syntax.
+        - Start with exactly one H1 (#) for the main topic.
+        - Use H2 (##) for major branches.
+        - Use bullet points (-) for sub-branches.
+        - Use nested bullet points (indented with 2 spaces) for sub-sub-branches.
+        
+        Example Structure:
+        # Biology
+        ## Cell Structure
+        - Nucleus
+          - Contains DNA
+          - Controls cell activity
+        - Mitochondria
+        ## Evolution
+        - Natural Selection
+        
+        Content to transform: ${content}`;
     }
 
     const client = getAiClient();
@@ -124,7 +151,7 @@ export const generateStudyMaterial = async (content: string, type: 'quiz' | 'fla
         model: MODEL_NAME,
         contents: prompt,
         config: {
-            systemInstruction: "You are an LLM generator. Return ONLY the requested format.",
+            systemInstruction: "You are an LLM content generator. Return ONLY the requested format (JSON for quiz/flashcards, plain Markdown for mindmap). No conversational filler or explanations about what you generated.",
             responseMimeType: type === 'mindmap' ? "text/plain" : "application/json"
         },
     });
@@ -145,7 +172,6 @@ export const sendTelegramMessage = async (token: string, chatId: string, text: s
     }
 };
 
-// Audio Utilities
 function encode(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
@@ -184,7 +210,7 @@ export const connectToLiveSession = (callbacks: any, tools?: any[], systemInstru
         config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-            systemInstruction: systemInstruction || getDynamicSystemInstruction(),
+            systemInstruction: systemInstruction || "You are an educational AI tutor. Follow the 1-3-1 rule for your spoken explanations.",
             tools,
         },
     });
