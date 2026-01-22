@@ -77,7 +77,7 @@ const StudyToolsModal: React.FC<StudyToolsModalProps> = ({ isOpen, onClose, fold
                             markmapInstance.current = mmGlobal.Markmap.create(svg, {
                                 autoFit: true,
                                 duration: 500,
-                                paddingX: 20,
+                                paddingX: 32,
                                 color: (node: any) => {
                                     const colors = ['#6A5BFF', '#818CF8', '#A5B4FC', '#C7D2FE'];
                                     return colors[Math.min(node.depth, colors.length - 1)];
@@ -95,7 +95,7 @@ const StudyToolsModal: React.FC<StudyToolsModalProps> = ({ isOpen, onClose, fold
                         console.error("Markmap Initialization Error:", err);
                         setError("Could not render the Knowledge Map structure.");
                     }
-                } else if (retryCount < 30) {
+                } else if (retryCount < 40) {
                     // Library might still be loading from CDN
                     setTimeout(() => initMarkmap(retryCount + 1), 200);
                 } else {

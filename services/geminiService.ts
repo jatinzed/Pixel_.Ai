@@ -19,10 +19,9 @@ export const getAiClient = (): GoogleGenAI => {
 };
 
 /**
- * Using gemini-3-flash-preview for high-performance reasoning and 
- * robust Google Search grounding support for real-time data.
+ * Using the user-requested model: gemini-2.5-flash-lite
  */
-const MODEL_NAME = 'gemini-3-flash-preview';
+const MODEL_NAME = 'gemini-2.5-flash-lite';
 
 const getDynamicSystemInstruction = (): string => {
     return `
@@ -151,7 +150,7 @@ export const generateStudyMaterial = async (content: string, type: 'quiz' | 'fla
         model: MODEL_NAME,
         contents: prompt,
         config: {
-            systemInstruction: "You are an LLM content generator. Return ONLY the requested format (JSON for quiz/flashcards, plain Markdown for mindmap). No conversational filler or explanations about what you generated.",
+            systemInstruction: "You are an LLM content generator. Return ONLY the requested format (JSON for quiz/flashcards, plain Markdown for mindmap). No conversational filler.",
             responseMimeType: type === 'mindmap' ? "text/plain" : "application/json"
         },
     });
