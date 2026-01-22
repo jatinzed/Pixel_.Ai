@@ -5,8 +5,14 @@ export interface WebGroundingSource {
   title?: string;
 }
 
+export interface MapGroundingSource {
+  uri?: string;
+  title?: string;
+}
+
 export interface GroundingChunk {
   web?: WebGroundingSource;
+  maps?: MapGroundingSource;
 }
 
 export interface GroundingMetadata {
