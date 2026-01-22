@@ -125,11 +125,11 @@ const App: React.FC = () => {
 
       try {
           if (savedConv) {
-              const saved: Omit<Conversation, 'chatSession'>[] = JSON.parse(savedConv);
+              const saved: any[] = JSON.parse(savedConv);
               if (saved.length > 0) {
                   const rehydrated = saved.map(c => ({
                       ...c,
-                      chatSession: startChat(c.messages.map(msg => ({ role: msg.role, parts: [{ text: msg.content }] }))),
+                      chatSession: startChat(c.messages.map((msg: any) => ({ role: msg.role, parts: [{ text: msg.content }] }))),
                   }));
                   setConversations(rehydrated);
                   setActiveConversationId(rehydrated[0]?.id || null);
@@ -138,15 +138,24 @@ const App: React.FC = () => {
       } catch (e) { handleNewChat(); }
   }, [userId, handleNewChat]);
 
-  // Sync state to localstorage
+  // Sync state to localstorage - FIXED: Explicit field picking to avoid circularity
   useEffect(() => {
       if (!userId) return;
       if (conversations.length > 0) {
-          const toSave = conversations.map(c => {
-              const { chatSession, ...rest } = c;
-              return rest;
-          });
+          const toSave = conversations.map(c => ({
+              id: c.id,
+              title: c.title,
+              messages: c.messages.map(m => ({
+                  id: m.id,
+                  role: m.role,
+                  content: m.content,
+                  // Ensure groundingMetadata is a plain object
+                  groundingMetadata: m.groundingMetadata ? JSON.parse(JSON.stringify(m.groundingMetadata)) : undefined
+              }))
+          }));
           localStorage.setItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`, JSON.stringify(toSave));
+      } else if (conversations.length === 0 && localStorage.getItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`)) {
+          localStorage.removeItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`);
       }
       localStorage.setItem(`${FOLDERS_KEY_PREFIX}${userId}`, JSON.stringify(folders));
   }, [conversations, folders, userId]);
@@ -169,9 +178,17 @@ const App: React.FC = () => {
       for await (const chunk of stream) {
         setConversations(prev => prev.map(c => {
             if (c.id === activeConversationId) {
+              const metadata = chunk.candidates?.[0]?.groundingMetadata;
+              // Clean metadata to be a plain object immediately
+              const plainMetadata = metadata ? JSON.parse(JSON.stringify(metadata)) : undefined;
+
               return { 
                 ...c, 
-                messages: c.messages.map(msg => msg.id === modelMessage.id ? {...msg, content: msg.content + chunk.text, groundingMetadata: chunk.candidates?.[0]?.groundingMetadata || msg.groundingMetadata} : msg) 
+                messages: c.messages.map(msg => msg.id === modelMessage.id ? {
+                    ...msg, 
+                    content: msg.content + chunk.text, 
+                    groundingMetadata: plainMetadata || msg.groundingMetadata
+                } : msg) 
               };
             }
             return c;

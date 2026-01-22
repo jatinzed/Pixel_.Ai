@@ -5,9 +5,14 @@ let ai: GoogleGenAI | null = null;
 
 export const getAiClient = (): GoogleGenAI => {
     if (ai) return ai;
-    const apiKey = process.env.GEMINI_API_KEY || "AIzaSyCF2B8zGDzKpFQR48zStgq-pVMPb3hh16c";
+    /**
+     * The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+     * This variable is pre-configured and accessible in the execution context.
+     * Hardcoding the API key string or using alternative environment names is prohibited for security.
+     */
+    const apiKey = process.env.API_KEY;
     if (!apiKey) {
-        const errorMessage = "API key is not configured. Please set the GEMINI_API_KEY environment variable.";
+        const errorMessage = "API key is not configured. The application requires process.env.API_KEY to function.";
         console.error(errorMessage);
         throw new Error(errorMessage);
     }
@@ -15,13 +20,8 @@ export const getAiClient = (): GoogleGenAI => {
     return ai;
 };
 
-// Model Hierarchy as requested: 2.5 Flash is now priority
-const MODEL_PRIORITY = [
-    'gemini-2.5-flash',          // Primary (Fast, Balanced)
-    'gemini-3-pro-preview',      // High Intelligence Fallback
-    'gemini-flash-lite-latest',  // Efficient Fallback
-    'gemini-3-flash-preview'     // Reliable Backup
-];
+// Using gemini-2.5-flash-lite exclusively for conversational and content tasks as requested.
+const MODEL_NAME = 'gemini-2.5-flash-lite';
 
 const getDynamicSystemInstruction = (): string => {
     return `
@@ -48,43 +48,10 @@ After explanations, append:
 `.trim();
 };
 
-/**
- * Utility to execute a content generation call with automatic model fallback.
- */
-async function callWithFallback(
-    prompt: string | any, 
-    config: any = {}, 
-    systemInstruction?: string
-): Promise<{ response: GenerateContentResponse, usedModel: string }> {
-    const client = getAiClient();
-    let lastError: any = null;
-
-    for (const modelName of MODEL_PRIORITY) {
-        try {
-            const response = await client.models.generateContent({
-                model: modelName,
-                contents: prompt,
-                config: {
-                    systemInstruction: systemInstruction || getDynamicSystemInstruction(),
-                    tools: [{ googleSearch: {} }],
-                    ...config
-                },
-            });
-            return { response, usedModel: modelName };
-        } catch (err) {
-            console.warn(`Model ${modelName} failed or exhausted. Trying fallback...`, err);
-            lastError = err;
-            continue;
-        }
-    }
-    throw lastError || new Error("All models failed to respond.");
-}
-
 export const startChat = (history?: Content[]): Chat => {
   const client = getAiClient();
-  // Start with the top priority model (gemini-2.5-flash)
   return client.chats.create({
-    model: MODEL_PRIORITY[0],
+    model: MODEL_NAME,
     history: history,
     config: {
       systemInstruction: getDynamicSystemInstruction(),
@@ -93,42 +60,28 @@ export const startChat = (history?: Content[]): Chat => {
   });
 };
 
-/**
- * Enhanced sendMessageStream that can switch models if a session fails
- */
 export const sendMessageStream = async (chat: Chat, message: string) => {
-    try {
-        return await chat.sendMessageStream({ message });
-    } catch (err) {
-        console.warn("Chat session failed, attempting fallback with fresh session...");
-        const history = await chat.getHistory();
-        const client = getAiClient();
-        
-        // Try remaining models in order starting from index 1 (gemini-3-pro-preview)
-        for (const modelName of MODEL_PRIORITY.slice(1)) {
-            try {
-                const fallbackChat = client.chats.create({
-                    model: modelName,
-                    history: history,
-                    config: {
-                        systemInstruction: getDynamicSystemInstruction(),
-                        tools: [{googleSearch: {}}],
-                    },
-                });
-                return await fallbackChat.sendMessageStream({ message });
-            } catch (fallbackErr) {
-                continue;
-            }
-        }
-        throw err;
-    }
+    return await chat.sendMessageStream({ message });
 };
 
 export const askQuestion = async (prompt: string): Promise<{ text: string, groundingMetadata?: any }> => {
-    const { response } = await callWithFallback(prompt);
+    const client = getAiClient();
+    const response = await client.models.generateContent({
+        model: MODEL_NAME,
+        contents: prompt,
+        config: {
+            systemInstruction: getDynamicSystemInstruction(),
+            tools: [{ googleSearch: {} }],
+        },
+    });
+    
+    // Deep clone metadata to remove internal SDK class instances that cause circularity errors during state serialization
+    const metadata = response.candidates?.[0]?.groundingMetadata;
+    const cleanMetadata = metadata ? JSON.parse(JSON.stringify(metadata)) : undefined;
+
     return { 
         text: response.text || "No response generated.", 
-        groundingMetadata: response.candidates?.[0]?.groundingMetadata 
+        groundingMetadata: cleanMetadata 
     };
 }
 
@@ -166,11 +119,15 @@ export const generateStudyMaterial = async (content: string, type: 'quiz' | 'fla
         Content: ${content}`;
     }
 
-    const { response } = await callWithFallback(
-        prompt, 
-        { responseMimeType: type === 'mindmap' ? "text/plain" : "application/json" },
-        "You are an LLM generator. Return ONLY the requested format."
-    );
+    const client = getAiClient();
+    const response = await client.models.generateContent({
+        model: MODEL_NAME,
+        contents: prompt,
+        config: {
+            systemInstruction: "You are an LLM generator. Return ONLY the requested format.",
+            responseMimeType: type === 'mindmap' ? "text/plain" : "application/json"
+        },
+    });
     return response.text || "";
 }
 
