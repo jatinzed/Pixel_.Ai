@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
@@ -10,7 +11,7 @@ import StudyToolsModal from './components/StudyToolsModal';
 import AddToFolderModal from './components/AddToFolderModal';
 import { MenuIcon } from './components/Icons';
 import { Conversation, Message, Room, RoomMessage, TelegramCredentials, Note, Folder, SavedItem } from './types';
-import { startChat, sendMessageStream, askQuestion, sendTelegramMessage } from './services/geminiService';
+import { startChat, sendMessageStream, askQuestion, sendTelegramMessage, LocationData } from './services/geminiService';
 import { 
     login, 
     createRoom, 
@@ -40,6 +41,8 @@ const App: React.FC = () => {
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
+  const [location, setLocation] = useState<LocationData | undefined>(undefined);
+
   // Modals
   const [isNotepadOpen, setIsNotepadOpen] = useState(false);
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
@@ -55,9 +58,10 @@ const App: React.FC = () => {
   const [telegramCredentials, setTelegramCredentials] = useState<TelegramCredentials | null>(null);
   const [initializationError, setInitializationError] = useState<string | null>(null);
 
-  // Auth Init
+  // Auth & Geolocation Init
   useEffect(() => {
-    const initAuth = async () => {
+    const initApp = async () => {
+        // Auth
         try {
             const user = await login();
             setUserId(user.uid);
@@ -69,8 +73,23 @@ const App: React.FC = () => {
             }
             setUserId(localId);
         }
+
+        // Geolocation - Ask automatically on load
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    setLocation({
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude
+                    });
+                },
+                (error) => {
+                    console.warn("Geolocation denied or unavailable:", error);
+                }
+            );
+        }
     };
-    initAuth();
+    initApp();
   }, []);
 
   // Listen to Rooms
@@ -101,14 +120,14 @@ const App: React.FC = () => {
           id: Date.now().toString(),
           title: 'New Study Chat',
           messages: [],
-          chatSession: startChat(),
+          chatSession: startChat(undefined, location),
         };
         setConversations(prev => [newConversation, ...prev]);
         setActiveConversationId(newConversation.id);
     } catch (error) {
         if (error instanceof Error) setInitializationError(error.message);
     }
-  }, [initializationError]);
+  }, [initializationError, location]);
 
   // Load persistence
   useEffect(() => {
@@ -129,16 +148,19 @@ const App: React.FC = () => {
               if (saved.length > 0) {
                   const rehydrated = saved.map(c => ({
                       ...c,
-                      chatSession: startChat(c.messages.map((msg: any) => ({ role: msg.role, parts: [{ text: msg.content }] }))),
+                      chatSession: startChat(
+                          c.messages.map((msg: any) => ({ role: msg.role, parts: [{ text: msg.content }] })),
+                          location
+                      ),
                   }));
                   setConversations(rehydrated);
                   setActiveConversationId(rehydrated[0]?.id || null);
               } else handleNewChat();
           } else handleNewChat();
       } catch (e) { handleNewChat(); }
-  }, [userId, handleNewChat]);
+  }, [userId, handleNewChat, location]);
 
-  // Sync state to localstorage - FIXED: Explicit field picking to avoid circularity
+  // Sync state to localstorage
   useEffect(() => {
       if (!userId) return;
       if (conversations.length > 0) {
@@ -149,7 +171,6 @@ const App: React.FC = () => {
                   id: m.id,
                   role: m.role,
                   content: m.content,
-                  // Ensure groundingMetadata is a plain object
                   groundingMetadata: m.groundingMetadata ? JSON.parse(JSON.stringify(m.groundingMetadata)) : undefined
               }))
           }));
@@ -179,7 +200,6 @@ const App: React.FC = () => {
         setConversations(prev => prev.map(c => {
             if (c.id === activeConversationId) {
               const metadata = chunk.candidates?.[0]?.groundingMetadata;
-              // Clean metadata to be a plain object immediately
               const plainMetadata = metadata ? JSON.parse(JSON.stringify(metadata)) : undefined;
 
               return { 
@@ -202,7 +222,7 @@ const App: React.FC = () => {
   };
 
   const handleSimplify = (content: string) => {
-      handleSendMessage(`Can you explain this again, but the 'Easy Way'? Keep it simple for a student. Reference: ${content.substring(0, 100)}...`);
+      handleSendMessage(`Simplify this: ${content.substring(0, 100)}...`);
   };
 
   const handleAddToFolderTrigger = (content: string) => {
@@ -321,7 +341,7 @@ const App: React.FC = () => {
               onSendMessage={async (text) => await sendFirebaseRoomMessage(activeRoom.id, { senderId: userId, text })}
               onAskAi={async (text) => {
                   await sendFirebaseRoomMessage(activeRoom.id, { senderId: userId, text: `/ask ${text}` });
-                  const { text: res, groundingMetadata } = await askQuestion(text);
+                  const { text: res, groundingMetadata } = await askQuestion(text, location);
                   await sendFirebaseRoomMessage(activeRoom.id, { senderId: 'PixelBot', text: res, groundingMetadata });
               }}
               onToggleReaction={async (mid, emoji) => await toggleFirebaseReaction(activeRoom.id, mid, emoji, userId)}

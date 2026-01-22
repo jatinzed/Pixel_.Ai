@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Message } from '../types';
 import { UserAvatar, BotAvatar, SparklesIcon, FolderPlusIcon, SpeakerIcon } from './Icons';
@@ -50,10 +51,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, onSimplify, onAddToF
     }
   };
 
-  const sources = message.groundingMetadata?.groundingChunks?.filter(c => c.web) || [];
-  const displayedSources = showAllSources ? sources : sources.slice(0, 2);
+  // Combine web and maps sources
+  const webSources = message.groundingMetadata?.groundingChunks?.filter(c => c.web) || [];
+  const mapSources = (message.groundingMetadata as any)?.groundingChunks?.filter((c: any) => c.maps) || [];
+  const sources = [...webSources, ...mapSources];
+  const displayedSources = showAllSources ? sources : sources.slice(0, 3);
 
-  // Split response into core content and curiosity engine footer for display
   const curiosityMatch = message.content.match(/---[\s\S]*🚀 Deepen your curiosity:[\s\S]*/);
   const coreContent = curiosityMatch ? message.content.replace(curiosityMatch[0], '') : message.content;
   const curiosityContent = curiosityMatch ? curiosityMatch[0] : null;
@@ -74,25 +77,25 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, onSimplify, onAddToF
 
                 {sources.length > 0 && (
                     <div className="mt-4 pt-3 border-t border-gray-100">
-                    <h4 className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">Sources:</h4>
+                    <h4 className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">Grounded Insights:</h4>
                     <ul className="space-y-2">
-                        {displayedSources.map((chunk, index) => (
-                        chunk.web && (
+                        {displayedSources.map((chunk: any, index) => (
+                        (chunk.web || chunk.maps) && (
                             <li key={index} className="text-xs">
-                            <a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center gap-2">
+                            <a href={chunk.web?.uri || chunk.maps?.uri} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center gap-2">
                                 <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{index + 1}</span>
-                                <span className="truncate">{chunk.web.title || chunk.web.uri}</span>
+                                <span className="truncate">{chunk.web?.title || chunk.maps?.title || "Explore Place"}</span>
                             </a>
                             </li>
                         )
                         ))}
                     </ul>
-                    {sources.length > 2 && !showAllSources && (
+                    {sources.length > 3 && !showAllSources && (
                         <button
                         onClick={() => setShowAllSources(true)}
                         className="text-xs font-semibold text-indigo-400 hover:underline mt-2"
                         >
-                        Show {sources.length - 2} more
+                        Show all {sources.length} sources
                         </button>
                     )}
                     </div>
