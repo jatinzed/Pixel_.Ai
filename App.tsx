@@ -74,7 +74,7 @@ const App: React.FC = () => {
             setUserId(localId);
         }
 
-        // Geolocation - Ask automatically on load
+        // Geolocation
         if ("geolocation" in navigator) {
             navigator.geolocation.getCurrentPosition(
                 (position) => {
@@ -87,6 +87,16 @@ const App: React.FC = () => {
                     console.warn("Geolocation denied or unavailable:", error);
                 }
             );
+        }
+
+        // Load Telegram Credentials
+        const saved = localStorage.getItem(TELEGRAM_CREDS_KEY);
+        if (saved) {
+            try {
+                setTelegramCredentials(JSON.parse(saved));
+            } catch (e) {
+                console.error("Failed to parse telegram creds", e);
+            }
         }
     };
     initApp();
@@ -115,6 +125,7 @@ const App: React.FC = () => {
     if (initializationError) return;
     setActiveRoomId(null);
     setActiveFolderId(null);
+    if (window.innerWidth < 1024) setIsSidebarOpen(false);
     try {
         const newConversation: Conversation = {
           id: Date.now().toString(),
@@ -175,8 +186,6 @@ const App: React.FC = () => {
               }))
           }));
           localStorage.setItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`, JSON.stringify(toSave));
-      } else if (conversations.length === 0 && localStorage.getItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`)) {
-          localStorage.removeItem(`${CONVERSATIONS_KEY_PREFIX}${userId}`);
       }
       localStorage.setItem(`${FOLDERS_KEY_PREFIX}${userId}`, JSON.stringify(folders));
   }, [conversations, folders, userId]);
@@ -215,14 +224,14 @@ const App: React.FC = () => {
         }));
       }
     } catch (error) {
-      setConversations(prev => prev.map(c => c.id === activeConversationId ? { ...c, messages: c.messages.map(msg => msg.id === modelMessage.id ? { ...msg, content: 'Encountered a problem. Please check your connection.' } : msg) } : c));
+      setConversations(prev => prev.map(c => c.id === activeConversationId ? { ...c, messages: c.messages.map(msg => msg.id === modelMessage.id ? { ...msg, content: 'Pixel AI encountered a temporary issue. Please try again.' } : msg) } : c));
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleSimplify = (content: string) => {
-      handleSendMessage(`Simplify this: ${content.substring(0, 100)}...`);
+      handleSendMessage(`Simplify this for a student: ${content.substring(0, 150)}...`);
   };
 
   const handleAddToFolderTrigger = (content: string) => {
@@ -232,7 +241,6 @@ const App: React.FC = () => {
 
   const handleSaveToFolder = (folderName: string) => {
       if (!pendingSaveContent) return;
-
       const activeConvo = conversations.find(c => c.id === activeConversationId);
       const sourceTitle = activeConvo?.title || "Untitled Chat";
 
@@ -244,7 +252,6 @@ const App: React.FC = () => {
               timestamp: Date.now(), 
               sourceTitle 
           };
-          
           if (existing) {
               return prev.map(f => f.id === existing.id ? { ...f, items: [newItem, ...f.items] } : f);
           } else {
@@ -262,18 +269,21 @@ const App: React.FC = () => {
       setActiveFolderId(folder.id);
       setActiveConversationId(null);
       setActiveRoomId(null);
+      if (window.innerWidth < 1024) setIsSidebarOpen(false);
   };
 
   const handleSelectConversation = (id: string) => {
       setActiveConversationId(id);
       setActiveFolderId(null);
       setActiveRoomId(null);
+      if (window.innerWidth < 1024) setIsSidebarOpen(false);
   };
 
   const handleSelectRoom = (id: string) => {
       setActiveRoomId(id);
       setActiveConversationId(null);
       setActiveFolderId(null);
+      if (window.innerWidth < 1024) setIsSidebarOpen(false);
   };
 
   const activeConversation = conversations.find(c => c.id === activeConversationId);
@@ -284,8 +294,20 @@ const App: React.FC = () => {
   if (initializationError) return <div className="flex h-screen w-screen items-center justify-center p-10 text-red-600 bg-red-50 text-center font-bold text-xl">{initializationError}</div>;
 
   return (
-    <div className="h-screen w-screen flex overflow-hidden font-sans bg-[#F9F9F9]">
-        <div className={`transition-all duration-300 ease-in-out h-full overflow-hidden ${isSidebarOpen ? 'w-[280px]' : 'w-0'}`}>
+    <div className="h-screen w-screen flex overflow-hidden font-sans bg-[#F9F9F9] relative">
+        {/* Mobile Overlay */}
+        {isSidebarOpen && window.innerWidth < 1024 && (
+            <div 
+                className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[90]" 
+                onClick={() => setIsSidebarOpen(false)}
+            />
+        )}
+
+        <div className={`
+            ${window.innerWidth < 1024 ? 'fixed inset-y-0 left-0 z-[100]' : 'relative'}
+            transition-all duration-300 ease-in-out h-full overflow-hidden bg-white
+            ${isSidebarOpen ? 'w-[280px] shadow-2xl lg:shadow-none' : 'w-0 -translate-x-full lg:translate-x-0'}
+        `}>
           <Sidebar
             conversations={conversations}
             rooms={rooms}
@@ -308,14 +330,14 @@ const App: React.FC = () => {
         {!isSidebarOpen && (
           <button 
             onClick={() => setIsSidebarOpen(true)} 
-            className="fixed top-5 left-5 z-[100] p-4 text-indigo-600 bg-white/80 backdrop-blur-md shadow-2xl border border-indigo-50 rounded-2xl hover:bg-white hover:scale-110 transition-all flex items-center justify-center animate-fade-in group"
-            title="Open Study Sidebar"
+            className="fixed top-5 left-5 z-[80] p-4 text-indigo-600 bg-white shadow-xl border border-indigo-50 rounded-2xl hover:scale-110 transition-all flex items-center justify-center animate-fade-in group"
+            title="Open Sidebar"
           >
-            <MenuIcon className="w-6 h-6 group-hover:rotate-180 transition-transform duration-500" />
+            <MenuIcon className="w-6 h-6" />
           </button>
         )}
 
-        <main className="flex-1 flex flex-col bg-white relative">
+        <main className="flex-1 flex flex-col bg-white relative min-w-0">
           {activeConversation && (
             <ChatView
               key={activeConversation.id}
@@ -356,11 +378,23 @@ const App: React.FC = () => {
                 onDeleteItem={(itemId) => handleDeleteFolderItem(activeFolder.id, itemId)}
             />
           )}
+          {!activeConversation && !activeRoom && !activeFolder && (
+              <div className="flex flex-col items-center justify-center h-full text-center px-10">
+                  <img src="https://iili.io/K4QGIa9.png" alt="Pixel AI" className="w-24 h-24 mb-6 animate-pulse" />
+                  <h2 className="text-3xl font-black text-indigo-900 mb-2">Welcome to Pixel AI</h2>
+                  <p className="text-gray-500 max-w-sm mb-8">Your personal pedagogical assistant. Start a chat or open a study folder to begin.</p>
+                  <button onClick={handleNewChat} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">Start Studying</button>
+              </div>
+          )}
         </main>
 
       <NotepadModal isOpen={isNotepadOpen} onClose={() => setIsNotepadOpen(false)} notes={notes} onUpdateNotes={setNotes} />
       <RoomModal isOpen={isRoomModalOpen} onClose={() => setIsRoomModalOpen(false)} onCreateRoom={async (code) => await createRoom(userId, code)} onJoinRoom={async (code) => await joinRoom(code, userId)} />
-      <TelegramModal isOpen={isTelegramModalOpen} onClose={() => setIsTelegramModalOpen(false)} onSave={(t, r) => { setTelegramCredentials({ token: t, recipients: r }); localStorage.setItem(TELEGRAM_CREDS_KEY, JSON.stringify({ token: t, recipients: r })); }} initialToken={telegramCredentials?.token} initialRecipients={telegramCredentials?.recipients} />
+      <TelegramModal isOpen={isTelegramModalOpen} onClose={() => setIsTelegramModalOpen(false)} onSave={(t, r) => { 
+          const creds = { token: t, recipients: r };
+          setTelegramCredentials(creds); 
+          localStorage.setItem(TELEGRAM_CREDS_KEY, JSON.stringify(creds)); 
+      }} initialToken={telegramCredentials?.token} initialRecipients={telegramCredentials?.recipients} />
       
       {studyToolConfig && (
         <StudyToolsModal 
@@ -368,6 +402,13 @@ const App: React.FC = () => {
             onClose={() => setIsStudyToolsOpen(false)} 
             folder={studyToolConfig.folder} 
             type={studyToolConfig.type} 
+            telegramCredentials={telegramCredentials}
+            onSendTelegram={async (text, chatId) => {
+                if (!telegramCredentials?.token) return { success: false, message: 'Bot Token missing.' };
+                const ok = await sendTelegramMessage(telegramCredentials.token, chatId, text);
+                return { success: ok, message: ok ? 'Sent!' : 'Failed.' };
+            }}
+            currentUserId={userId}
         />
       )}
 

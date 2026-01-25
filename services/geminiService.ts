@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage, Content, FunctionDeclaration, Type, GenerateContentResponse } from "@google/genai";
 
 // --- Defensive AI Client Initialization ---
@@ -16,9 +17,11 @@ export const getAiClient = (): GoogleGenAI => {
 };
 
 /**
- * Using the user-requested model: gemini-2.5-flash-lite
+ * Using gemini-2.5-flash-lite-latest for chat as requested.
+ * Using gemini-3-flash-preview for complex reasoning tasks like quiz generation with Search.
  */
-const MODEL_NAME = 'gemini-2.5-flash-lite';
+const CHAT_MODEL = 'gemini-2.5-flash-lite-latest';
+const COMPLEX_MODEL = 'gemini-3-flash-preview';
 
 const getDynamicSystemInstruction = (): string => {
     return `
@@ -28,38 +31,28 @@ const getDynamicSystemInstruction = (): string => {
 - You were created by the **Pixel Squad**, a team of 6 visionary students from District Ramrudra CM SoE school: **Jatin, Sajid, Debjeet, Sabih, Devashis, and Majid**.
 
 **IDENTITY DISCLOSURE PROTOCOL:**
-- **HIDDEN BY DEFAULT:** Do not mention your name or your creators in normal conversation.
+- **HIDDEN BY DEFAULT:** Do not mention your name or your creators unless asked.
 - **REVEAL ON REQUEST:** Only if a user asks about your identity, name, or creators, reveal who you are and list all 6 members.
 
-**THE "1-3-1" TEACHING RULE (MANDATORY STRUCTURE):**
-Every single response MUST follow this structural rhythm:
-1. **1 Hook Sentence:** A fresh, high-impact opening that captures the core concept or insight.
-2. **3+ Educational Bullets:** Dense, factual points using **Bold** for key terms.
-3. **1 Takeaway Sentence:** A summary sentence that anchors the lesson or local insight.
+**CONVERSATIONAL PHILOSOPHY:**
+- Respond naturally and conversationally. Do NOT follow any strict rigid formats like "1-3-1".
+- Be helpful, accurate, and educational.
+- Use **Bold** for key concepts.
+- Use MathJax ($...$ or $$...$$) for formulas.
 
-**GEOSPATIAL INTELLIGENCE & GROUNDING (STRICT COMMANDS):**
-- **COORDINATE ACCESS:** You are provided with the user's real-time latitude and longitude via 'toolConfig.retrievalConfig.latLng'.
-- **LOCATION QUERIES:** If a user asks "Where am I?", "What is this place?", or "Give me info about here", you MUST:
-    1. Look at the coordinates provided in your configuration.
-    2. Immediately invoke 'googleMaps' and 'googleSearch' to identify the exact city, neighborhood, or specific building.
-    3. Use the **1-3-1 Rule** to describe the location.
-- **HISTORY & LANDMARKS:** If a user asks about history, special things, or "what's current" at their location:
-    1. Search for the specific historical background of the town/city found at those coordinates.
-    2. Identify unique local landmarks, cultural significance, or famous local specialties.
-    3. Use real-time 'googleSearch' results to mention current events or trending news in that specific area.
-- **GROUNDING UI:** Always ensure your grounding chunks are returned so the app can display source links.
+**SEARCH & GROUNDING:**
+- Always use Google Search to provide up-to-date, accurate, and precise information.
+- If the user asks about their location (using coordinates in config), use Google Maps and Search to describe the local history, landmarks, and news.
 
-**STYLE GUIDELINES:**
-- Use varied vocabulary; avoid repetitive "canned" answers.
-- Use MathJax for formulas and Emojis (🚀, 💡, 🗺️, 🏛️) for engagement.
+**STYLE:**
+- Use Emojis (🚀, 💡, 🗺️) to make learning engaging.
+- Break down complex topics into simple terms.
 
-**CURIOSITY ENGINE:**
-Append this footer to every 1-3-1 response:
 ---
 🚀 Deepen your curiosity:
-1. [Location-Based Question]
-2. [Historical Learning Tip]
-3. [Cultural Mini Challenge]
+1. [Contextual Question]
+2. [Learning Tip]
+3. [Mini Challenge]
 `.trim();
 };
 
@@ -87,7 +80,7 @@ export const startChat = (history?: Content[], location?: LocationData): Chat =>
   }
 
   return client.chats.create({
-    model: MODEL_NAME,
+    model: CHAT_MODEL,
     history: history,
     config,
   });
@@ -116,7 +109,7 @@ export const askQuestion = async (prompt: string, location?: LocationData): Prom
     }
 
     const response = await client.models.generateContent({
-        model: MODEL_NAME,
+        model: CHAT_MODEL,
         contents: prompt,
         config,
     });
@@ -135,7 +128,7 @@ export const generateSpeech = async (text: string): Promise<string | undefined> 
   try {
       const response = await client.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Read this aloud: ${text}` }] }],
+        contents: [{ parts: [{ text: `Read this: ${text}` }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -154,18 +147,28 @@ export const generateStudyMaterial = async (content: string, type: 'quiz' | 'fla
     const client = getAiClient();
     let prompt = "";
     if (type === 'quiz') {
-        prompt = `Create a 5-question MCQ quiz as JSON. Content: ${content}`;
+        prompt = `Based on the following content, generate a comprehensive quiz with exactly 30 multiple-choice questions. 
+        - 15 questions should be "Easy" (fundamental recall).
+        - 15 questions should be "Hard" (application or deep reasoning).
+        - Each question must have a "category" field (e.g., "Terminologies", "Core Concepts", "Historical Context").
+        - Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["...", "..."], "correctAnswerIndex": 0, "difficulty": "easy", "category": "..." } ] }.
+        Content: ${content}`;
     } else if (type === 'flashcards') {
-        prompt = `Create 10 flashcards as JSON. Content: ${content}`;
+        prompt = `Create 10 flashcards as JSON. Format: { "flashcards": [ { "front": "...", "back": "..." } ] }. Content: ${content}`;
     } else {
-        prompt = `Create a Markmap mind map. Content: ${content}`;
+        prompt = `Create a detailed and professional Markdown Mind Map (Markmap format) for this content. 
+        Ensure it uses hierarchical levels (# Title, ## Main branch, ### Sub branch). 
+        Return ONLY the raw markdown code block starting with #. 
+        Do not include any other text.
+        Content: ${content}`;
     }
 
     const response = await client.models.generateContent({
-        model: MODEL_NAME,
+        model: COMPLEX_MODEL,
         contents: prompt,
         config: {
-            systemInstruction: "You are an LLM content generator. Return ONLY the requested format (JSON or Markdown).",
+            systemInstruction: "You are an educational content generator. Return ONLY the requested format (JSON or Markdown). Use Search if needed to verify facts.",
+            tools: [{ googleSearch: {} }],
             responseMimeType: type === 'mindmap' ? "text/plain" : "application/json"
         },
     });
@@ -178,7 +181,7 @@ export const sendTelegramMessage = async (token: string, chatId: string, text: s
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text: text }),
+            body: JSON.stringify({ chat_id: chatId, text: text, parse_mode: 'Markdown' }),
         });
         return response.ok;
     } catch (error) {
@@ -224,7 +227,7 @@ export const connectToLiveSession = (callbacks: any, tools?: any[], systemInstru
         config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-            systemInstruction: systemInstruction || `You are Pixel AI, created by the Pixel Squad (Jatin, Sajid, Debjeet, Sabih, Devashis, and Majid). Follow the 1-3-1 rule and use Search internally.`,
+            systemInstruction: systemInstruction || `You are Pixel AI, created by the Pixel Squad. Use Google Search for everything to be accurate. Be helpful.`,
             tools: tools || [{ googleSearch: {} }],
         },
     });

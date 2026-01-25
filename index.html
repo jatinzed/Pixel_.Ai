@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -18,12 +19,11 @@
     </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     
-    <!-- Markmap Requirements: Load D3 first, then the libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.17.0/dist/browser/index.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.17.0/dist/browser/index.js"></script>
+    <!-- Load D3 and Markmap libraries directly for better browser-only support -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.16.1/dist/browser/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.16.0/dist/browser/index.js"></script>
 
     <script>
       tailwind.config = {
@@ -59,76 +59,16 @@
         margin-top: 1.5em;
         margin-bottom: 0.6em;
       }
-      .prose h1 { font-size: 2em; }
-      .prose h2 { font-size: 1.5em; }
-      .prose h3 { font-size: 1.25em; }
-      .prose p { margin-bottom: 1.25em; }
-      .prose a { color: #4f46e5; text-decoration: underline; }
-      .prose ul, .prose ol {
-        padding-left: 1.75em;
-        margin-bottom: 1.25em;
-      }
-      .prose ul { list-style-type: disc; }
-      .prose ol { list-style-type: decimal; }
-      .prose li > p { margin-bottom: 0.5em; }
       .prose code { 
         background-color: #e5e7eb;
         color: #1f2937;
         padding: 0.2em 0.4em; 
-        margin: 0;
-        font-size: 85%;
         border-radius: 3px; 
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      }
-      .prose pre {
-        background-color: #1f2937;
-        color: #d1d5db;
-        padding: 1em;
-        border-radius: 0.5rem;
-        overflow-x: auto;
-        margin-bottom: 1.25em;
-      }
-      .prose pre code {
-        background-color: transparent;
-        color: inherit;
-        padding: 0;
-        font-size: inherit;
-      }
-      .prose blockquote {
-        border-left: 0.25em solid #d1d5db;
-        padding-left: 1em;
-        margin-left: 0;
-        color: #6b7280;
-        font-style: italic;
-      }
-      .prose table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 1.25em;
-        display: block;
-        overflow-x: auto;
-      }
-      .prose th, .prose td {
-        border: 1px solid #d1d5db;
-        padding: 0.5em 1em;
-      }
-      .prose th {
-        background-color: #f9fafb;
-        font-weight: 600;
-      }
-      .prose hr {
-          border-top: 1px solid #e5e7eb;
-          margin: 2em 0;
       }
       .curiosity-engine {
           margin-top: 1.5rem;
           padding-top: 1rem;
           border-top: 2px dashed #E5E7EB;
-          font-size: 0.95rem;
-      }
-      .curiosity-engine h5 {
-          margin-top: 0 !important;
-          color: #6A5BFF !important;
       }
     </style>
   <script type="importmap">
