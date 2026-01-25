@@ -92,17 +92,12 @@ const StudyToolsModal: React.FC<StudyToolsModalProps> = ({
         }
     };
 
-    // Fix arithmetic operation errors by ensuring operands are treated as numbers
     const handleCompleteQuiz = async (finalScore: number) => {
         setQuizCompleted(true);
         
-        // Ensure total is a number and non-zero to avoid potential issues
         const total: number = data?.questions?.length || 0;
-        // Calculation of percentage based on number types
         const percentage = total > 0 ? Math.round((finalScore / total) * 100) : 0;
         
-        // Find weak topics by sorting the topic error counts
-        // Explicitly casting values to number to fix TS errors during arithmetic subtraction
         const sortedWeak = Object.entries(incorrectTopics)
             .sort((a, b) => (b[1] as number) - (a[1] as number))
             .slice(0, 3)
@@ -123,36 +118,37 @@ const StudyToolsModal: React.FC<StudyToolsModalProps> = ({
     useEffect(() => {
         if (type === 'mindmap' && data && visualizerRef.current && isOpen) {
             const initMarkmap = (retryCount = 0) => {
-                const mmGlobal = (window as any).markmap;
-                const mmLib = (window as any).markmap_lib;
+                const mm = (window as any).markmap;
                 
-                if (mmGlobal && (mmGlobal.Transformer || mmLib?.Transformer) && mmGlobal.Markmap) {
+                // Markmap libraries can sometimes be nested under 'markmap' global
+                const Transformer = mm?.Transformer || (window as any).markmap_lib?.Transformer;
+                const Markmap = mm?.Markmap;
+
+                if (Transformer && Markmap && visualizerRef.current) {
                     try {
-                        const Transformer = mmGlobal.Transformer || mmLib.Transformer;
                         const transformer = new Transformer();
                         const { root } = transformer.transform(data);
                         
-                        if (visualizerRef.current) {
-                            const svg = visualizerRef.current;
-                            svg.innerHTML = ''; 
+                        const svg = visualizerRef.current;
+                        svg.innerHTML = ''; 
 
-                            markmapInstance.current = mmGlobal.Markmap.create(svg, {
-                                autoFit: true,
-                                duration: 500,
-                                paddingX: 32,
-                                color: (node: any) => {
-                                    const colors = ['#6A5BFF', '#818CF8', '#A5B4FC', '#C7D2FE'];
-                                    return colors[Math.min(node.depth, colors.length - 1)];
-                                }
-                            }, root);
+                        markmapInstance.current = Markmap.create(svg, {
+                            autoFit: true,
+                            duration: 500,
+                            paddingX: 32,
+                            color: (node: any) => {
+                                const colors = ['#6A5BFF', '#818CF8', '#A5B4FC', '#C7D2FE'];
+                                return colors[Math.min(node.depth, colors.length - 1)];
+                            }
+                        }, root);
 
-                            setTimeout(() => {
-                                if (markmapInstance.current) {
-                                    markmapInstance.current.fit();
-                                }
-                            }, 500);
-                        }
+                        setTimeout(() => {
+                            if (markmapInstance.current) {
+                                markmapInstance.current.fit();
+                            }
+                        }, 500);
                     } catch (err) {
+                        console.error("Markmap error:", err);
                         setError("Error rendering Knowledge Map.");
                     }
                 } else if (retryCount < 50) {
@@ -165,7 +161,12 @@ const StudyToolsModal: React.FC<StudyToolsModalProps> = ({
         }
         
         return () => {
-            if (markmapInstance.current) markmapInstance.current = null;
+            if (markmapInstance.current) {
+                try {
+                  markmapInstance.current.destroy();
+                } catch(e) {}
+                markmapInstance.current = null;
+            }
         };
     }, [type, data, isOpen]);
 
